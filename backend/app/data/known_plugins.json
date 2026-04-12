@@ -1,0 +1,716 @@
+[
+  {
+    "slug": "klaviyo",
+    "name": "Klaviyo",
+    "platform": "shopify",
+    "monthly_cost_low": 45,
+    "monthly_cost_high": 150,
+    "detection_patterns": {
+      "script_urls": ["klaviyo.com/media/js", "static.klaviyo.com"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "yotpo",
+    "name": "Yotpo",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 119,
+    "detection_patterns": {
+      "script_urls": ["staticw2.yotpo.com", "yotpo.com/widget"],
+      "meta_names": [],
+      "dom_selectors": [".yotpo", "#yotpo-reviews"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "judgeme",
+    "name": "Judge.me",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 15,
+    "detection_patterns": {
+      "script_urls": ["judge.me/assets"],
+      "meta_names": [],
+      "dom_selectors": [".jdgm-widget", ".jdgm-rev"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "privy",
+    "name": "Privy",
+    "platform": "shopify",
+    "monthly_cost_low": 15,
+    "monthly_cost_high": 70,
+    "detection_patterns": {
+      "script_urls": ["widget.privy.com"],
+      "meta_names": [],
+      "dom_selectors": ["#privy-container"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "recharge",
+    "name": "ReCharge",
+    "platform": "shopify",
+    "monthly_cost_low": 99,
+    "monthly_cost_high": 499,
+    "detection_patterns": {
+      "script_urls": ["rechargepayments.com", "static.rechargecdn.com"],
+      "meta_names": [],
+      "dom_selectors": [".recharge-widget"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "loox",
+    "name": "Loox",
+    "platform": "shopify",
+    "monthly_cost_low": 9,
+    "monthly_cost_high": 34,
+    "detection_patterns": {
+      "script_urls": ["loox.io/widget"],
+      "meta_names": [],
+      "dom_selectors": [".loox-rating"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "smile-io",
+    "name": "Smile.io",
+    "platform": "shopify",
+    "monthly_cost_low": 49,
+    "monthly_cost_high": 199,
+    "detection_patterns": {
+      "script_urls": ["cdn.sweettooth.io", "cdn.smile.io"],
+      "meta_names": [],
+      "dom_selectors": ["#smile-ui-container"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "bold-commerce",
+    "name": "Bold Commerce",
+    "platform": "shopify",
+    "monthly_cost_low": 29,
+    "monthly_cost_high": 249,
+    "detection_patterns": {
+      "script_urls": ["boldapps.net", "bold-apps.myshopify.com"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "pagefly",
+    "name": "PageFly",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 99,
+    "detection_patterns": {
+      "script_urls": ["pagefly.io"],
+      "meta_names": [],
+      "dom_selectors": ["[data-pf-type]", ".pf-content"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "lucky-orange",
+    "name": "Lucky Orange",
+    "platform": "universal",
+    "monthly_cost_low": 18,
+    "monthly_cost_high": 100,
+    "detection_patterns": {
+      "script_urls": ["luckyorange.com/v7/lt.js", "luckyorange.net"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "hotjar",
+    "name": "Hotjar",
+    "platform": "universal",
+    "monthly_cost_low": 39,
+    "monthly_cost_high": 213,
+    "detection_patterns": {
+      "script_urls": ["static.hotjar.com", "vars.hotjar.com"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["Hotjar Tracking Code"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "omnisend",
+    "name": "Omnisend",
+    "platform": "shopify",
+    "monthly_cost_low": 16,
+    "monthly_cost_high": 99,
+    "detection_patterns": {
+      "script_urls": ["omnisend.com/content"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "tidio",
+    "name": "Tidio",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 49,
+    "detection_patterns": {
+      "script_urls": ["code.tidio.co"],
+      "meta_names": [],
+      "dom_selectors": ["#tidio-chat"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "gorgias",
+    "name": "Gorgias",
+    "platform": "shopify",
+    "monthly_cost_low": 50,
+    "monthly_cost_high": 300,
+    "detection_patterns": {
+      "script_urls": ["config.gorgias.chat", "client-builds.gorgias.chat"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "google-analytics",
+    "name": "Google Analytics",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 0,
+    "detection_patterns": {
+      "script_urls": ["google-analytics.com/analytics.js", "googletagmanager.com/gtag/js"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["Google Analytics"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "facebook-pixel",
+    "name": "Facebook Pixel",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 0,
+    "detection_patterns": {
+      "script_urls": ["connect.facebook.net/en_US/fbevents.js", "connect.facebook.net"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["Facebook Pixel Code"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "tiktok-pixel",
+    "name": "TikTok Pixel",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 0,
+    "detection_patterns": {
+      "script_urls": ["analytics.tiktok.com/i18n/pixel"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "google-tag-manager",
+    "name": "Google Tag Manager",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 0,
+    "detection_patterns": {
+      "script_urls": ["googletagmanager.com/gtm.js"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["Google Tag Manager"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "intercom",
+    "name": "Intercom",
+    "platform": "universal",
+    "monthly_cost_low": 74,
+    "monthly_cost_high": 374,
+    "detection_patterns": {
+      "script_urls": ["widget.intercom.io", "js.intercomcdn.com"],
+      "meta_names": [],
+      "dom_selectors": ["#intercom-container", ".intercom-messenger-frame"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "drift",
+    "name": "Drift",
+    "platform": "universal",
+    "monthly_cost_low": 400,
+    "monthly_cost_high": 1500,
+    "detection_patterns": {
+      "script_urls": ["js.driftt.com", "js.drift.com"],
+      "meta_names": [],
+      "dom_selectors": ["#drift-widget-container"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "zendesk",
+    "name": "Zendesk",
+    "platform": "universal",
+    "monthly_cost_low": 55,
+    "monthly_cost_high": 215,
+    "detection_patterns": {
+      "script_urls": ["static.zdassets.com/ekr/snippet.js"],
+      "meta_names": [],
+      "dom_selectors": ["#launcher"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "yoast-seo",
+    "name": "Yoast SEO",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 12,
+    "detection_patterns": {
+      "script_urls": ["plugins/wordpress-seo"],
+      "meta_names": ["yoast-schema-graph"],
+      "dom_selectors": [],
+      "html_comments": ["This site is optimized with the Yoast SEO plugin"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "elementor",
+    "name": "Elementor",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 20,
+    "detection_patterns": {
+      "script_urls": ["plugins/elementor/assets"],
+      "meta_names": [],
+      "dom_selectors": [".elementor-widget-container", ".elementor-section"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "wpbakery",
+    "name": "WPBakery",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 8,
+    "detection_patterns": {
+      "script_urls": ["plugins/js_composer"],
+      "meta_names": [],
+      "dom_selectors": [".vc_row", ".wpb_wrapper"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "mailchimp-for-woocommerce",
+    "name": "Mailchimp for WooCommerce",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 50,
+    "detection_patterns": {
+      "script_urls": ["plugins/mailchimp-for-woocommerce"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "wp-rocket",
+    "name": "WP Rocket",
+    "platform": "woocommerce",
+    "monthly_cost_low": 4,
+    "monthly_cost_high": 15,
+    "detection_patterns": {
+      "script_urls": ["plugins/wp-rocket"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["This website is like a Rocket"],
+      "headers": ["x-rocket-nginx"]
+    }
+  },
+  {
+    "slug": "wordfence",
+    "name": "Wordfence",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 10,
+    "detection_patterns": {
+      "script_urls": ["plugins/wordfence"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["Wordfence"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "wpml",
+    "name": "WPML",
+    "platform": "woocommerce",
+    "monthly_cost_low": 3,
+    "monthly_cost_high": 8,
+    "detection_patterns": {
+      "script_urls": ["plugins/sitepress-multilingual-cms"],
+      "meta_names": [],
+      "dom_selectors": [".wpml-ls-item"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "monsterinsights",
+    "name": "MonsterInsights",
+    "platform": "woocommerce",
+    "monthly_cost_low": 9,
+    "monthly_cost_high": 20,
+    "detection_patterns": {
+      "script_urls": ["plugins/google-analytics-for-wordpress"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "jetpack",
+    "name": "Jetpack",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 50,
+    "detection_patterns": {
+      "script_urls": ["plugins/jetpack"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "rank-math",
+    "name": "Rank Math",
+    "platform": "woocommerce",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 8,
+    "detection_patterns": {
+      "script_urls": ["plugins/seo-by-rank-math"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": ["Rank Math WordPress SEO Plugin"],
+      "headers": []
+    }
+  },
+  {
+    "slug": "omnisend-woo",
+    "name": "Omnisend for WooCommerce",
+    "platform": "woocommerce",
+    "monthly_cost_low": 16,
+    "monthly_cost_high": 99,
+    "detection_patterns": {
+      "script_urls": ["plugins/omnisend-connect"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "afterpay",
+    "name": "Afterpay",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 0,
+    "detection_patterns": {
+      "script_urls": ["js.afterpay.com/afterpay-1.x.js"],
+      "meta_names": [],
+      "dom_selectors": [".afterpay-logo"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "klarna",
+    "name": "Klarna",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 0,
+    "detection_patterns": {
+      "script_urls": ["js.klarna.com/web-sdk"],
+      "meta_names": [],
+      "dom_selectors": ["klarna-placement"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "attentive",
+    "name": "Attentive",
+    "platform": "shopify",
+    "monthly_cost_low": 300,
+    "monthly_cost_high": 1500,
+    "detection_patterns": {
+      "script_urls": ["cdn.attn.tv"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "postscript",
+    "name": "Postscript",
+    "platform": "shopify",
+    "monthly_cost_low": 100,
+    "monthly_cost_high": 500,
+    "detection_patterns": {
+      "script_urls": ["postscript.io/assets"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "stamped-io",
+    "name": "Stamped.io",
+    "platform": "shopify",
+    "monthly_cost_low": 19,
+    "monthly_cost_high": 79,
+    "detection_patterns": {
+      "script_urls": ["stamped.io/assets"],
+      "meta_names": [],
+      "dom_selectors": [".stamped-main-badge"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "okendo",
+    "name": "Okendo",
+    "platform": "shopify",
+    "monthly_cost_low": 19,
+    "monthly_cost_high": 99,
+    "detection_patterns": {
+      "script_urls": ["cdn.okendo.io"],
+      "meta_names": [],
+      "dom_selectors": [".okeReviews"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "loyalty-lion",
+    "name": "LoyaltyLion",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 159,
+    "detection_patterns": {
+      "script_urls": ["cdn.loyaltylion.com/v2/lion.js"],
+      "meta_names": [],
+      "dom_selectors": ["#loyalty-lion"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "zipify",
+    "name": "Zipify Pages",
+    "platform": "shopify",
+    "monthly_cost_low": 67,
+    "monthly_cost_high": 207,
+    "detection_patterns": {
+      "script_urls": ["zipify.com/assets"],
+      "meta_names": [],
+      "dom_selectors": [".zipify-block"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "shogun",
+    "name": "Shogun",
+    "platform": "shopify",
+    "monthly_cost_low": 39,
+    "monthly_cost_high": 149,
+    "detection_patterns": {
+      "script_urls": ["ucarecdn.com"],
+      "meta_names": [],
+      "dom_selectors": [".shogun-root"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "wisepops",
+    "name": "Wisepops",
+    "platform": "universal",
+    "monthly_cost_low": 49,
+    "monthly_cost_high": 199,
+    "detection_patterns": {
+      "script_urls": ["wisepops.com/popup"],
+      "meta_names": [],
+      "dom_selectors": ["#wisepops-root"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "recart",
+    "name": "Recart",
+    "platform": "shopify",
+    "monthly_cost_low": 299,
+    "monthly_cost_high": 999,
+    "detection_patterns": {
+      "script_urls": ["recart.com/js"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "pushowl",
+    "name": "PushOwl",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 25,
+    "detection_patterns": {
+      "script_urls": ["cdn.pushowl.com"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "searchie",
+    "name": "SearchPie",
+    "platform": "shopify",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 39,
+    "detection_patterns": {
+      "script_urls": ["searchpie.io"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "boost-commerce",
+    "name": "Boost Commerce",
+    "platform": "shopify",
+    "monthly_cost_low": 19,
+    "monthly_cost_high": 99,
+    "detection_patterns": {
+      "script_urls": ["boostcommerce.net"],
+      "meta_names": [],
+      "dom_selectors": [".boost-pfs-filter"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "nosto",
+    "name": "Nosto",
+    "platform": "shopify",
+    "monthly_cost_low": 99,
+    "monthly_cost_high": 499,
+    "detection_patterns": {
+      "script_urls": ["connect.nosto.com"],
+      "meta_names": [],
+      "dom_selectors": [".nosto_element"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "justuno",
+    "name": "Justuno",
+    "platform": "shopify",
+    "monthly_cost_low": 19,
+    "monthly_cost_high": 99,
+      "detection_patterns": {
+      "script_urls": ["cdn.jst.ai"],
+      "meta_names": [],
+      "dom_selectors": ["#ju-container"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "convertflow",
+    "name": "ConvertFlow",
+    "platform": "universal",
+    "monthly_cost_low": 99,
+    "monthly_cost_high": 300,
+    "detection_patterns": {
+      "script_urls": ["js.convertflow.co"],
+      "meta_names": [],
+      "dom_selectors": [],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "sumo",
+    "name": "Sumo",
+    "platform": "universal",
+    "monthly_cost_low": 0,
+    "monthly_cost_high": 39,
+    "detection_patterns": {
+      "script_urls": ["load.sumo.com"],
+      "meta_names": [],
+      "dom_selectors": ["#sumo-container"],
+      "html_comments": [],
+      "headers": []
+    }
+  },
+  {
+    "slug": "typeform",
+    "name": "Typeform",
+    "platform": "universal",
+    "monthly_cost_low": 25,
+    "monthly_cost_high": 83,
+    "detection_patterns": {
+      "script_urls": ["embed.typeform.com"],
+      "meta_names": [],
+      "dom_selectors": ["[data-tf-widget]"],
+      "html_comments": [],
+      "headers": []
+    }
+  }
+]

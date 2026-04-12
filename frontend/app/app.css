@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans", "Noto Sans Fallback";
+  --font-serif: "Noto Serif", "Noto Serif Fallback";
+
+  --color-tradual-primary: #0a2f23;
+  --color-tradual-primary-light: #1a4a3a;
+  --color-tradual-accent: #c5a96f;
+  --color-tradual-danger: #EF4444;
+  --color-tradual-bg: #FAFAF8;
+}
+
+html,
+body {
+  @apply bg-[#FAFAF8];
+}
