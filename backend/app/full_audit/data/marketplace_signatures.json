@@ -1,0 +1,56 @@
+[
+  {
+    "name": "Amazon",
+    "slug": "amazon",
+    "link_patterns": ["amazon.com", "amazon.de", "amazon.nl", "amazon.co.uk", "amazon.fr"],
+    "script_patterns": []
+  },
+  {
+    "name": "Bol.com",
+    "slug": "bol",
+    "link_patterns": ["bol.com"],
+    "script_patterns": []
+  },
+  {
+    "name": "Etsy",
+    "slug": "etsy",
+    "link_patterns": ["etsy.com"],
+    "script_patterns": []
+  },
+  {
+    "name": "Trustpilot",
+    "slug": "trustpilot",
+    "link_patterns": ["trustpilot.com"],
+    "script_patterns": ["widget.trustpilot.com", "invitejs.trustpilot.com"]
+  },
+  {
+    "name": "Kiyoh",
+    "slug": "kiyoh",
+    "link_patterns": ["kiyoh.nl", "kiyoh.com"],
+    "script_patterns": ["kiyoh"]
+  },
+  {
+    "name": "Google Reviews",
+    "slug": "google-reviews",
+    "link_patterns": ["g.co/maps", "maps.google", "place_id"],
+    "script_patterns": []
+  },
+  {
+    "name": "Bazaarvoice",
+    "slug": "bazaarvoice",
+    "link_patterns": [],
+    "script_patterns": ["bazaarvoice.com", "bvstatic.com"]
+  },
+  {
+    "name": "Yotpo",
+    "slug": "yotpo",
+    "link_patterns": [],
+    "script_patterns": ["staticw2.yotpo.com", "app.yotpo.com"]
+  },
+  {
+    "name": "Coolblue",
+    "slug": "coolblue",
+    "link_patterns": ["coolblue.nl", "coolblue.be"],
+    "script_patterns": []
+  }
+]

@@ -1,0 +1,56 @@
+[
+  {
+    "name": "Algolia",
+    "slug": "algolia",
+    "script_patterns": ["algolia", "instantsearch", "algoliasearch"],
+    "dom_patterns": ["ais-", "data-algolia", "algolia-autocomplete"]
+  },
+  {
+    "name": "Searchanise",
+    "slug": "searchanise",
+    "script_patterns": ["searchanise.com", "searchanise"],
+    "dom_patterns": ["snize", "searchanise"]
+  },
+  {
+    "name": "Klevu",
+    "slug": "klevu",
+    "script_patterns": ["klevu.com", "klevu-core"],
+    "dom_patterns": ["klevu-"]
+  },
+  {
+    "name": "Doofinder",
+    "slug": "doofinder",
+    "script_patterns": ["doofinder.com"],
+    "dom_patterns": ["df-"]
+  },
+  {
+    "name": "Findify",
+    "slug": "findify",
+    "script_patterns": ["findify.io", "cdn.findify"],
+    "dom_patterns": ["data-findify"]
+  },
+  {
+    "name": "Searchspring",
+    "slug": "searchspring",
+    "script_patterns": ["searchspring.net"],
+    "dom_patterns": []
+  },
+  {
+    "name": "Boost Commerce",
+    "slug": "boost-commerce",
+    "script_patterns": ["boostcommerce.net", "boostifyapps.com"],
+    "dom_patterns": []
+  },
+  {
+    "name": "Constructor.io",
+    "slug": "constructor-io",
+    "script_patterns": ["constructor.io"],
+    "dom_patterns": []
+  },
+  {
+    "name": "Coveo",
+    "slug": "coveo",
+    "script_patterns": ["coveo.com", "static.cloud.coveo"],
+    "dom_patterns": ["coveo-"]
+  }
+]

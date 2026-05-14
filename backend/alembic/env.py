@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import Base
 
 # Import all models so Alembic can detect them
+from app.full_audit.models import FullAudit  # noqa: F401
 from app.leads.models import Lead  # noqa: F401
 from app.reports.models import DetectedPlugin, KnownPlugin, Report  # noqa: F401
 

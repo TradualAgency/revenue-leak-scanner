@@ -1,0 +1,168 @@
+{
+  "analytics": [
+    {
+      "name": "Google Analytics 4",
+      "slug": "ga4",
+      "script_patterns": ["gtag/js?id=G-", "google-analytics.com/g/collect"],
+      "inline_patterns": ["gtag('config'", "gtag(\"config\""],
+      "cookie_patterns": ["_ga", "_gid"]
+    },
+    {
+      "name": "Google Tag Manager",
+      "slug": "gtm",
+      "script_patterns": [
+        "googletagmanager.com/gtm.js?id=GTM-",
+        "googletagmanager.com/ns.html?id=GTM-"
+      ],
+      "inline_patterns": ["GTM-"],
+      "cookie_patterns": []
+    },
+    {
+      "name": "Meta Pixel",
+      "slug": "meta-pixel",
+      "script_patterns": [
+        "connect.facebook.net/en_US/fbevents.js",
+        "connect.facebook.net/signals/config/"
+      ],
+      "inline_patterns": ["fbq(", "fbq.callMethod"],
+      "cookie_patterns": ["_fbp", "_fbc"]
+    },
+    {
+      "name": "TikTok Pixel",
+      "slug": "tiktok-pixel",
+      "script_patterns": ["analytics.tiktok.com/i18n/pixel/events.js"],
+      "inline_patterns": ["ttq.load(", "ttq.track("],
+      "cookie_patterns": ["_ttp"]
+    },
+    {
+      "name": "Microsoft Clarity",
+      "slug": "microsoft-clarity",
+      "script_patterns": ["clarity.ms/tag/"],
+      "inline_patterns": ["clarity(\"set\"", "clarity('set'"],
+      "cookie_patterns": ["_clsk", "_clck"]
+    },
+    {
+      "name": "Hotjar",
+      "slug": "hotjar",
+      "script_patterns": ["static.hotjar.com/c/hotjar"],
+      "inline_patterns": ["hjid:", "hjsv:"],
+      "cookie_patterns": ["_hjSessionUser", "_hjSession_"]
+    },
+    {
+      "name": "Pinterest Tag",
+      "slug": "pinterest-tag",
+      "script_patterns": ["ct.pinterest.com/v3/"],
+      "inline_patterns": ["pintrk("],
+      "cookie_patterns": []
+    },
+    {
+      "name": "Bing Ads / Microsoft UET",
+      "slug": "bing-ads",
+      "script_patterns": ["bat.bing.com/bat.js"],
+      "inline_patterns": ["window.uetq"],
+      "cookie_patterns": []
+    },
+    {
+      "name": "Snap Pixel",
+      "slug": "snap-pixel",
+      "script_patterns": ["tr.snapchat.com/p"],
+      "inline_patterns": ["snaptr("],
+      "cookie_patterns": []
+    },
+    {
+      "name": "Lucky Orange",
+      "slug": "lucky-orange",
+      "script_patterns": ["d.luckyorange.net/v2/"],
+      "inline_patterns": ["__lo_cs_added"],
+      "cookie_patterns": ["__louid"]
+    }
+  ],
+  "cmp": [
+    {
+      "name": "Cookiebot",
+      "slug": "cookiebot",
+      "script_patterns": ["consent.cookiebot.com/uc.js", "cookiebot.com"],
+      "inline_patterns": ["Cookiebot"],
+      "cookie_patterns": ["CookieConsent"]
+    },
+    {
+      "name": "OneTrust",
+      "slug": "onetrust",
+      "script_patterns": ["cdn.cookielaw.org/scripttemplates/otSDKStub.js"],
+      "inline_patterns": ["OneTrust", "OptanonConsent"],
+      "cookie_patterns": ["OptanonConsent", "OptanonAlertBoxClosed"]
+    },
+    {
+      "name": "CookieYes",
+      "slug": "cookieyes",
+      "script_patterns": ["cdn-cookieyes.com/cookieyesv2.js", "cdn-cookieyes.com"],
+      "inline_patterns": ["cookieyesID"],
+      "cookie_patterns": ["cookieyesID", "cookieyesUUID"]
+    },
+    {
+      "name": "Iubenda",
+      "slug": "iubenda",
+      "script_patterns": ["cdn.iubenda.com/iubenda.js"],
+      "inline_patterns": ["_iub.csConfiguration"],
+      "cookie_patterns": ["_iub_cs-"]
+    },
+    {
+      "name": "Quantcast Choice",
+      "slug": "quantcast",
+      "script_patterns": ["quantserve.com/choice"],
+      "inline_patterns": ["__cmp("],
+      "cookie_patterns": ["__cmpconsentx"]
+    },
+    {
+      "name": "Osano",
+      "slug": "osano",
+      "script_patterns": ["cmp.osano.com"],
+      "inline_patterns": ["Osano"],
+      "cookie_patterns": ["osano_consentmanager"]
+    }
+  ],
+  "esp": [
+    {
+      "name": "Klaviyo",
+      "slug": "klaviyo",
+      "script_patterns": ["static.klaviyo.com/onsite/js/klaviyo.js", "static.klaviyo.com"],
+      "inline_patterns": ["_learnq", "klaviyo.identify"],
+      "cookie_patterns": ["__kla_id"]
+    },
+    {
+      "name": "Omnisend",
+      "slug": "omnisend",
+      "script_patterns": ["omnywidget.omnisend.com/omny.js"],
+      "inline_patterns": ["omnisend.push"],
+      "cookie_patterns": ["_omappvp", "omnisend"]
+    },
+    {
+      "name": "Mailchimp",
+      "slug": "mailchimp",
+      "script_patterns": ["chimpstatic.com/mcjs-connected", "chimpstatic.com"],
+      "inline_patterns": [],
+      "cookie_patterns": []
+    },
+    {
+      "name": "Drip",
+      "slug": "drip",
+      "script_patterns": ["tag.getdrip.com"],
+      "inline_patterns": ["_dcq"],
+      "cookie_patterns": []
+    },
+    {
+      "name": "Attentive",
+      "slug": "attentive",
+      "script_patterns": ["cdn.attn.tv/"],
+      "inline_patterns": ["attentive"],
+      "cookie_patterns": ["__attentive_id"]
+    },
+    {
+      "name": "ActiveCampaign",
+      "slug": "activecampaign",
+      "script_patterns": ["trackcmp.net"],
+      "inline_patterns": ["vgo("],
+      "cookie_patterns": []
+    }
+  ]
+}

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.full_audit.router import router as full_audit_router
 from app.leads.router import router as leads_router
 from app.reports.router import router as reports_router
 
@@ -30,6 +31,7 @@ app.add_middleware(
 
 app.include_router(leads_router)
 app.include_router(reports_router)
+app.include_router(full_audit_router)
 
 
 @app.get("/api/v1/health", tags=["health"])

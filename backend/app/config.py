@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://revleak:revleak@localhost:5432/revleak"
     PAGESPEED_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
     SCRAPER_MAX_PAGES: int = 15
     SCRAPER_TIMEOUT_SECONDS: int = 15
     SCRAPER_CONCURRENCY: int = 5

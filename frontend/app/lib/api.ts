@@ -1,9 +1,13 @@
 import type {
+  FullAuditCreateResponse,
+  FullAuditRequest,
+  FullAuditResponse,
+  FullAuditStatusResponse,
   LeadCreatePayload,
   LeadCreateResponse,
+  ReportFullResponse,
   ReportStatusResponse,
   ReportSummaryResponse,
-  ReportFullResponse,
 } from "./types";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
@@ -38,4 +42,19 @@ export function getReportSummary(reportId: string): Promise<ReportSummaryRespons
 
 export function getFullReport(reportId: string): Promise<ReportFullResponse> {
   return request<ReportFullResponse>(`/reports/${reportId}`);
+}
+
+export function createFullAudit(payload: FullAuditRequest): Promise<FullAuditCreateResponse> {
+  return request<FullAuditCreateResponse>("/full-audit", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getFullAuditStatus(auditId: string): Promise<FullAuditStatusResponse> {
+  return request<FullAuditStatusResponse>(`/full-audit/${auditId}/status`);
+}
+
+export function getFullAudit(auditId: string): Promise<FullAuditResponse> {
+  return request<FullAuditResponse>(`/full-audit/${auditId}`);
 }

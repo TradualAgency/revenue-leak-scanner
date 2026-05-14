@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Loop Returns",
+    "slug": "loop",
+    "script_patterns": ["loopreturns.com"],
+    "link_patterns": ["loopreturns.com", "return-portal", "returnportal"]
+  },
+  {
+    "name": "Returnly",
+    "slug": "returnly",
+    "script_patterns": ["returnly.com"],
+    "link_patterns": ["returnly.com"]
+  },
+  {
+    "name": "ReturnGo",
+    "slug": "returngo",
+    "script_patterns": ["returngo.co"],
+    "link_patterns": ["returngo.co"]
+  },
+  {
+    "name": "AfterShip Returns",
+    "slug": "aftership-returns",
+    "script_patterns": ["aftership.com", "returns.aftership"],
+    "link_patterns": ["returns.aftership", "aftership.com/tracking"]
+  },
+  {
+    "name": "Narvar",
+    "slug": "narvar",
+    "script_patterns": ["narvar.com"],
+    "link_patterns": ["narvar.com/returns"]
+  },
+  {
+    "name": "WeSupply",
+    "slug": "wesupply",
+    "script_patterns": ["wesupplyco.com"],
+    "link_patterns": ["wesupplyco.com"]
+  },
+  {
+    "name": "ParcelPanel",
+    "slug": "parcelpanel",
+    "script_patterns": ["parcelpanel.com"],
+    "link_patterns": []
+  },
+  {
+    "name": "Sendcloud Returns",
+    "slug": "sendcloud-returns",
+    "script_patterns": [],
+    "link_patterns": ["returns.sendcloud.com", "returns.sendcloud.es"]
+  }
+]

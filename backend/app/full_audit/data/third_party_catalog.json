@@ -1,0 +1,272 @@
+[
+  {
+    "name": "Klaviyo",
+    "domain": "static.klaviyo.com",
+    "category": "email",
+    "purpose": "Email & SMS marketing automation",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 150,
+    "replaceable_by": null
+  },
+  {
+    "name": "Google Tag Manager",
+    "domain": "www.googletagmanager.com",
+    "category": "analytics",
+    "purpose": "Tag management container",
+    "default_necessity": "critical",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Google Analytics 4",
+    "domain": "www.google-analytics.com",
+    "category": "analytics",
+    "purpose": "Web analytics",
+    "default_necessity": "critical",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Meta Pixel",
+    "domain": "connect.facebook.net",
+    "category": "ads",
+    "purpose": "Facebook/Instagram ad tracking",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "TikTok Pixel",
+    "domain": "analytics.tiktok.com",
+    "category": "ads",
+    "purpose": "TikTok ad tracking",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Pinterest Tag",
+    "domain": "ct.pinterest.com",
+    "category": "ads",
+    "purpose": "Pinterest ad tracking",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Bing Ads",
+    "domain": "bat.bing.com",
+    "category": "ads",
+    "purpose": "Microsoft/Bing ad tracking",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Snap Pixel",
+    "domain": "tr.snapchat.com",
+    "category": "ads",
+    "purpose": "Snapchat ad tracking",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Microsoft Clarity",
+    "domain": "clarity.ms",
+    "category": "ux",
+    "purpose": "Free heatmaps & session recordings",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 0,
+    "replaceable_by": null
+  },
+  {
+    "name": "Hotjar",
+    "domain": "static.hotjar.com",
+    "category": "ux",
+    "purpose": "Heatmaps & session recordings",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 80,
+    "replaceable_by": "Microsoft Clarity (free)"
+  },
+  {
+    "name": "Lucky Orange",
+    "domain": "d.luckyorange.net",
+    "category": "ux",
+    "purpose": "Heatmaps, session recording, live chat",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 30,
+    "replaceable_by": "Microsoft Clarity (free)"
+  },
+  {
+    "name": "Yotpo Reviews",
+    "domain": "staticw2.yotpo.com",
+    "category": "reviews",
+    "purpose": "Product reviews & UGC platform",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 200,
+    "replaceable_by": "Judge.me (~€15/mo)"
+  },
+  {
+    "name": "Loox Reviews",
+    "domain": "loox.io",
+    "category": "reviews",
+    "purpose": "Photo reviews & referral program",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 50,
+    "replaceable_by": "Judge.me"
+  },
+  {
+    "name": "Judge.me Reviews",
+    "domain": "judge.me",
+    "category": "reviews",
+    "purpose": "Product reviews",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 15,
+    "replaceable_by": null
+  },
+  {
+    "name": "Trustpilot",
+    "domain": "widget.trustpilot.com",
+    "category": "reviews",
+    "purpose": "Third-party trust & review platform",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 80,
+    "replaceable_by": null
+  },
+  {
+    "name": "Stamped.io",
+    "domain": "stamped.io",
+    "category": "reviews",
+    "purpose": "Reviews, loyalty & referral",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 60,
+    "replaceable_by": null
+  },
+  {
+    "name": "Gorgias",
+    "domain": "config.gorgias.chat",
+    "category": "chat",
+    "purpose": "E-commerce customer support & helpdesk",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 60,
+    "replaceable_by": null
+  },
+  {
+    "name": "Tidio",
+    "domain": "code.tidio.co",
+    "category": "chat",
+    "purpose": "Live chat & AI chatbot",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 40,
+    "replaceable_by": "Gorgias"
+  },
+  {
+    "name": "Intercom",
+    "domain": "widget.intercom.io",
+    "category": "chat",
+    "purpose": "Customer messaging platform",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 100,
+    "replaceable_by": null
+  },
+  {
+    "name": "Zendesk Chat",
+    "domain": "static.zdassets.com",
+    "category": "chat",
+    "purpose": "Customer support & ticketing",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 80,
+    "replaceable_by": null
+  },
+  {
+    "name": "Privy",
+    "domain": "widget.privy.com",
+    "category": "email",
+    "purpose": "Popup & email capture",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 30,
+    "replaceable_by": "Klaviyo native signup forms"
+  },
+  {
+    "name": "Omnisend",
+    "domain": "omnywidget.omnisend.com",
+    "category": "email",
+    "purpose": "Email & SMS marketing platform",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 80,
+    "replaceable_by": "Klaviyo"
+  },
+  {
+    "name": "Mailchimp",
+    "domain": "chimpstatic.com",
+    "category": "email",
+    "purpose": "Email marketing",
+    "default_necessity": "replaceable",
+    "est_monthly_cost_eur": 50,
+    "replaceable_by": "Klaviyo (e-commerce native)"
+  },
+  {
+    "name": "Attentive",
+    "domain": "cdn.attn.tv",
+    "category": "sms",
+    "purpose": "SMS marketing platform",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 200,
+    "replaceable_by": "Klaviyo SMS"
+  },
+  {
+    "name": "Recart",
+    "domain": "cdn.recart.com",
+    "category": "sms",
+    "purpose": "SMS & Messenger marketing",
+    "default_necessity": "removable",
+    "est_monthly_cost_eur": 100,
+    "replaceable_by": "Klaviyo SMS"
+  },
+  {
+    "name": "Tapcart",
+    "domain": "tapcart.co",
+    "category": "mobile",
+    "purpose": "Mobile app builder for Shopify",
+    "default_necessity": "useful",
+    "est_monthly_cost_eur": 250,
+    "replaceable_by": null
+  },
+  {
+    "name": "Cookiebot",
+    "domain": "consent.cookiebot.com",
+    "category": "cmp",
+    "purpose": "GDPR consent management platform",
+    "default_necessity": "critical",
+    "est_monthly_cost_eur": 10,
+    "replaceable_by": null
+  },
+  {
+    "name": "OneTrust",
+    "domain": "cdn.cookielaw.org",
+    "category": "cmp",
+    "purpose": "Enterprise consent management",
+    "default_necessity": "critical",
+    "est_monthly_cost_eur": 50,
+    "replaceable_by": "Cookiebot or CookieYes"
+  },
+  {
+    "name": "CookieYes",
+    "domain": "cdn-cookieyes.com",
+    "category": "cmp",
+    "purpose": "GDPR cookie consent banner",
+    "default_necessity": "critical",
+    "est_monthly_cost_eur": 10,
+    "replaceable_by": null
+  },
+  {
+    "name": "Iubenda",
+    "domain": "cdn.iubenda.com",
+    "category": "cmp",
+    "purpose": "Privacy policy & consent management",
+    "default_necessity": "critical",
+    "est_monthly_cost_eur": 10,
+    "replaceable_by": null
+  }
+]

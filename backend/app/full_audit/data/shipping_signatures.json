@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Sendcloud",
+    "slug": "sendcloud",
+    "script_patterns": ["sendcloud.sc", "panel.sendcloud.com"],
+    "dom_patterns": ["sendcloud"]
+  },
+  {
+    "name": "DHL",
+    "slug": "dhl",
+    "script_patterns": ["dhlparcel.nl", "api.dhl.com"],
+    "dom_patterns": ["dhl-parcel", "dhlparcel"]
+  },
+  {
+    "name": "PostNL",
+    "slug": "postnl",
+    "script_patterns": ["postnl.nl"],
+    "dom_patterns": ["postnl"]
+  },
+  {
+    "name": "UPS",
+    "slug": "ups",
+    "script_patterns": ["onlinetools.ups.com", "uewebtracking.ups.com"],
+    "dom_patterns": ["ups-icon", "ups-logo"]
+  },
+  {
+    "name": "Bpost",
+    "slug": "bpost",
+    "script_patterns": ["bpost.be"],
+    "dom_patterns": ["bpost"]
+  },
+  {
+    "name": "MyParcel",
+    "slug": "myparcel",
+    "script_patterns": ["myparcel.nl", "myparcel.be"],
+    "dom_patterns": ["myparcel"]
+  },
+  {
+    "name": "ShipBob",
+    "slug": "shipbob",
+    "script_patterns": ["shipbob.com"],
+    "dom_patterns": []
+  },
+  {
+    "name": "Packlink",
+    "slug": "packlink",
+    "script_patterns": ["packlink.com"],
+    "dom_patterns": []
+  },
+  {
+    "name": "Shippo",
+    "slug": "shippo",
+    "script_patterns": ["goshippo.com"],
+    "dom_patterns": []
+  },
+  {
+    "name": "Paazl",
+    "slug": "paazl",
+    "script_patterns": ["paazl.com"],
+    "dom_patterns": ["paazl"]
+  }
+]
