@@ -3,7 +3,13 @@ import { Link, useParams } from "react-router";
 import { getFullAudit, getFullAuditStatus } from "~/lib/api";
 import type {
   AccessibilityHealth,
+  AdTrafficImpact,
   AiAnalysis,
+  AiBloatInsight,
+  MetricStatus,
+  RevenueLeakLayer,
+  RevenueLeakMetric,
+  RevenueLeakReport,
   BloatItem,
   CostBreakdownRow,
   CroObservation,
@@ -20,6 +26,7 @@ import type {
   RichResultsHealth,
   ServerSideTracking,
   ShippingHealth,
+  ShopifyMigrationInsight,
   SiteSearchHealth,
   VendorDetection,
 } from "~/lib/types";
@@ -573,11 +580,385 @@ function CroSection({ items }: { items: CroObservation[] }) {
   );
 }
 
+const SHOPIFY_RECOMMENDATION_TONE: Record<string, { label: string; color: string }> = {
+  aanbevolen: { label: "Aanbevolen", color: "bg-green-500/20 text-green-300 border border-green-500/30" },
+  overwegen: { label: "Overwegen", color: "bg-amber-500/20 text-amber-300 border border-amber-500/30" },
+  "niet-nu": { label: "Niet nu", color: "bg-red-500/20 text-red-300 border border-red-500/30" },
+  "af-te-raden": { label: "Af te raden", color: "bg-red-500/20 text-red-300 border border-red-500/30" },
+  "niet-van-toepassing": { label: "Al op Shopify", color: "bg-white/10 text-white/50 border border-white/10" },
+};
+
+function ShopifyMigrationCard({ insight }: { insight: ShopifyMigrationInsight }) {
+  const tone = SHOPIFY_RECOMMENDATION_TONE[insight.recommendation] ?? {
+    label: insight.recommendation,
+    color: "bg-white/10 text-white/50 border border-white/10",
+  };
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-[#c5a96f]">Shopify-migratie</h3>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${tone.color}`}>{tone.label}</span>
+      </div>
+      <p className="text-sm text-white/80 leading-relaxed mb-3">{insight.summary}</p>
+      <p className="text-xs text-white/60 leading-relaxed mb-3">{insight.rationale}</p>
+      {(insight.key_wins.length > 0 || insight.key_risks.length > 0) && (
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          {insight.key_wins.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Kansen</p>
+              <ul className="flex flex-col gap-1">
+                {insight.key_wins.map((w, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs text-green-300/80">
+                    <span className="shrink-0 mt-0.5">+</span>{w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {insight.key_risks.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Risico's</p>
+              <ul className="flex flex-col gap-1">
+                {insight.key_risks.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs text-red-300/80">
+                    <span className="shrink-0 mt-0.5">!</span>{r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      {insight.top_actions.length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-2">Acties</p>
+          <ul className="flex flex-col gap-1.5">
+            {insight.top_actions.map((a, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-white/70">
+                <span className="text-[#c5a96f] mt-0.5 shrink-0">→</span>{a}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {insight.signals_used.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {insight.signals_used.map((s) => (
+            <span key={s} className="text-xs bg-white/10 text-white/50 px-2 py-0.5 rounded-full">{s}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetricPriorityBadge({ priority }: { priority: RevenueLeakMetric["priority"] }) {
+  const colors: Record<RevenueLeakMetric["priority"], string> = {
+    critical: "bg-red-500/20 text-red-400 border-red-500/30",
+    high: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    medium: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+    low: "bg-white/5 text-white/30 border-white/10",
+  };
+  return (
+    <span className={`text-[9px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded border ${colors[priority]}`}>
+      {priority}
+    </span>
+  );
+}
+
+function MetricStatusIcon({ status }: { status: MetricStatus }) {
+  if (status === "good") return <span className="text-emerald-400 text-xs shrink-0">✓</span>;
+  if (status === "warning") return <span className="text-yellow-400 text-xs shrink-0">⚠</span>;
+  if (status === "critical") return <span className="text-red-400 text-xs shrink-0">✗</span>;
+  return <span className="text-white/20 text-xs shrink-0">–</span>;
+}
+
+function RevenueLeakLayerRow({ layer }: { layer: RevenueLeakLayer }) {
+  const [open, setOpen] = useState(false);
+  const isLayer5 = layer.layer === 5;
+  const hasLoss = layer.est_monthly_loss_eur != null;
+  const isNa = !hasLoss && !isLayer5;
+  const hasMetrics = layer.metrics && layer.metrics.length > 0;
+  const hasSignals = (layer.good_signals?.length || 0) + (layer.improvement_signals?.length || 0) > 0;
+  return (
+    <>
+      <tr
+        className={`border-b border-white/5 last:border-0 group ${(hasMetrics || hasSignals) ? "cursor-pointer hover:bg-white/[0.02]" : ""}`}
+        onClick={() => (hasMetrics || hasSignals) && setOpen((o) => !o)}
+      >
+        <td className="py-3 pr-3 text-white/30 text-xs font-mono">{layer.layer}</td>
+        <td className="py-3 pr-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-white">{layer.name}</span>
+            {(hasMetrics || hasSignals) && (
+              <span className="text-white/20 text-xs">{open ? "▲" : "▼"}</span>
+            )}
+          </div>
+          <p className="text-xs text-white/40 mt-0.5 leading-snug max-w-[220px]">{layer.core_question}</p>
+          {layer.summary && !open && (
+            <p className="text-[10px] text-white/25 mt-0.5 italic">{layer.summary}</p>
+          )}
+        </td>
+        <td className="py-3 pr-4 tabular-nums">
+          {isLayer5 ? (
+            layer.readiness_score != null ? (
+              <div>
+                <span className={`text-base font-bold ${layer.readiness_score >= 75 ? "text-emerald-400" : layer.readiness_score >= 40 ? "text-yellow-400" : "text-red-400"}`}>
+                  {layer.readiness_score}/100
+                </span>
+                <div className="text-[10px] text-white/30 mt-0.5">gereedheid</div>
+              </div>
+            ) : <span className="text-xs text-white/25 italic">n.v.t.</span>
+          ) : isNa ? (
+            <span className="text-xs text-white/25 italic">n.v.t.</span>
+          ) : (
+            <span className={`text-base font-bold ${(layer.est_monthly_loss_eur || 0) > 1000 ? "text-red-400" : (layer.est_monthly_loss_eur || 0) > 0 ? "text-orange-400" : "text-white/30"}`}>
+              {(layer.est_monthly_loss_eur || 0) === 0 ? "—" : `€${(layer.est_monthly_loss_eur || 0).toLocaleString("nl-NL")}`}
+            </span>
+          )}
+        </td>
+        <td className="py-3 pr-4 tabular-nums">
+          {isLayer5 ? (
+            <span className="text-xs text-white/25 italic">n.v.t.</span>
+          ) : isNa ? (
+            <span className="text-xs text-white/25 italic">n.v.t.</span>
+          ) : (
+            <span className={`text-sm font-medium ${(layer.est_annual_loss_eur || 0) > 12000 ? "text-red-300/70" : "text-white/40"}`}>
+              {(layer.est_annual_loss_eur || 0) === 0 ? "—" : `€${(layer.est_annual_loss_eur || 0).toLocaleString("nl-NL")}`}
+            </span>
+          )}
+        </td>
+        <td className="py-3 pr-4 text-center">
+          <span className="text-xs text-white/30">{layer.metric_count}</span>
+        </td>
+        <td className="py-3">
+          <span className="text-xs text-[#c5a96f]/70 whitespace-nowrap">{layer.leads_to}</span>
+        </td>
+      </tr>
+      {open && (
+        <>
+          {/* Good / Improvement signals */}
+          {hasSignals && (
+            <tr className="bg-white/[0.015] border-b border-white/5">
+              <td />
+              <td colSpan={5} className="py-3 pl-3 pr-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(layer.good_signals?.length || 0) > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-emerald-400/70 uppercase tracking-wide mb-1.5">Wat goed gaat</p>
+                      <ul className="flex flex-col gap-1">
+                        {layer.good_signals.map((s, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-[11px] text-emerald-300/70">
+                            <span className="shrink-0 mt-0.5">✓</span>{s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {(layer.improvement_signals?.length || 0) > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-orange-400/70 uppercase tracking-wide mb-1.5">Wat beter kan</p>
+                      <ul className="flex flex-col gap-1">
+                        {layer.improvement_signals.map((s, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-[11px] text-orange-300/70">
+                            <span className="shrink-0 mt-0.5">⚠</span>{s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </td>
+            </tr>
+          )}
+          {/* Metric detail rows */}
+          {hasMetrics && layer.metrics.map((m) => (
+            <tr key={m.metric} className="bg-white/[0.01] border-b border-white/5">
+              <td />
+              <td className="py-2 pr-4 pl-3" colSpan={2}>
+                <div className="flex items-start gap-2">
+                  <MetricStatusIcon status={m.status} />
+                  <MetricPriorityBadge priority={m.priority} />
+                  <div>
+                    <p className="text-xs font-medium text-white/70">{m.metric}</p>
+                    {m.signal && <p className="text-[11px] text-white/35 mt-0.5">{m.signal}</p>}
+                  </div>
+                </div>
+              </td>
+              <td className="py-2 pr-4 tabular-nums">
+                {m.monthly_loss_eur != null ? (
+                  <span className={`text-xs font-semibold ${m.monthly_loss_eur > 500 ? "text-red-400/80" : m.monthly_loss_eur > 0 ? "text-orange-400/80" : "text-emerald-400/50"}`}>
+                    {m.monthly_loss_eur === 0 ? "✓ geen verlies" : `€${m.monthly_loss_eur.toLocaleString("nl-NL")}`}
+                  </span>
+                ) : <span className="text-[10px] text-white/20 italic">strategisch</span>}
+              </td>
+              <td colSpan={2} className="py-2 pr-3">
+                <p className="text-[10px] text-white/25 leading-snug">{m.calculation_note}</p>
+              </td>
+            </tr>
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+function CeoTriggersSection({ triggers }: { triggers: RevenueLeakReport["ceo_triggers"] }) {
+  if (!triggers || triggers.length === 0) return null;
+  const grouped = triggers.reduce<Record<string, typeof triggers>>((acc, t) => {
+    if (!acc[t.category]) acc[t.category] = [];
+    acc[t.category].push(t);
+    return acc;
+  }, {});
+  const categoryOrder = ["Omzet & Groei", "Conversie & Funnel", "Kosten & Efficiëntie", "Concurrentie & Toekomst"];
+  const sorted = categoryOrder.filter((c) => grouped[c]).concat(Object.keys(grouped).filter((c) => !categoryOrder.includes(c)));
+  return (
+    <div className="mt-6 pt-5 border-t border-white/10">
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-4">CEO trigger KPIs</p>
+      <div className="flex flex-col gap-5">
+        {sorted.map((cat) => (
+          <div key={cat}>
+            <p className="text-[10px] font-semibold text-[#c5a96f]/70 uppercase tracking-wider mb-2">{cat}</p>
+            <div className="flex flex-col gap-2">
+              {[...grouped[cat]].sort((a, b) => (b.triggered ? 1 : 0) - (a.triggered ? 1 : 0)).map((t) => (
+                <div key={t.kpi} className={`rounded-lg p-3 border ${t.triggered ? "bg-red-900/20 border-red-500/20" : "bg-white/[0.03] border-white/5"}`}>
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <p className={`text-xs font-semibold ${t.triggered ? "text-red-300" : "text-white/50"}`}>{t.kpi}</p>
+                    {t.triggered && <span className="shrink-0 text-[9px] uppercase font-bold bg-red-500/30 text-red-300 px-1.5 py-0.5 rounded">Actief</span>}
+                  </div>
+                  {t.triggered && (
+                    <>
+                      <p className="text-[11px] text-white/60 leading-snug mb-1.5">{t.real_meaning}</p>
+                      <p className="text-[11px] text-[#c5a96f]/70 italic leading-snug">{t.tradual_pitch}</p>
+                    </>
+                  )}
+                  {!t.triggered && (
+                    <p className="text-[10px] text-white/25 leading-snug">{t.alarm_signal}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RevenueLeakSection({ data }: { data: RevenueLeakReport }) {
+  const total = data.total_monthly_loss_eur || 0;
+  const totalAnnual = data.total_annual_loss_eur || 0;
+  const direct = data.direct_monthly_loss_eur ?? null;
+  const efficiency = data.efficiency_monthly_uplift_eur ?? null;
+  const showSplit = direct != null && efficiency != null;
+  return (
+    <SectionCard title="Revenue Leak — Wat kost het je?" dark>
+      {total > 0 && (
+        <div className="mb-6 pb-5 border-b border-white/10">
+          {showSplit ? (
+            <div className="flex flex-col gap-1.5 mb-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-white/40">Directe lek (Laag 1+2+3)</span>
+                <span className="text-base font-semibold text-orange-400">€{(direct || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-white/40">Efficiëntie-uplift (Laag 4)</span>
+                <span className="text-base font-semibold text-yellow-400">€{(efficiency || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+              </div>
+              <div className="flex items-baseline justify-between pt-2 border-t border-white/10 mt-1">
+                <span className="text-xs font-semibold text-white/60">Totale revenue leak</span>
+                <span className="text-xl font-bold text-red-400">€{total.toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-6">
+              <div>
+                <p className="text-3xl font-bold text-red-400">€{total.toLocaleString("nl-NL")}</p>
+                <p className="text-xs text-white/40 mt-1">geschat verlies per maand</p>
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-red-300/70">€{totalAnnual.toLocaleString("nl-NL")}</p>
+                <p className="text-xs text-white/40 mt-1">per jaar</p>
+              </div>
+            </div>
+          )}
+          {data.roi && (
+            <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-white/5 text-xs text-white/40">
+              {data.roi.payback_months != null && (
+                <span>Terugverdientijd Stack Rebuild: <b className="text-white/70">{data.roi.payback_months} maanden</b></span>
+              )}
+              {data.roi.year_one_net_return_eur > 0 && (
+                <span>Netto jaar 1: <b className="text-emerald-400">€{data.roi.year_one_net_return_eur.toLocaleString("nl-NL")}</b></span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-white/10">
+              {["#", "Naam & Kernvraag", "Verlies/mnd", "Verlies/jaar", "Metrics", "Leidt naar"].map((h) => (
+                <th key={h} className="text-left py-2 pr-3 text-white/30 font-medium uppercase tracking-wide text-[10px]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.layers.map((layer) => (
+              <RevenueLeakLayerRow key={layer.layer} layer={layer} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data.methodology_note && (
+        <p className="text-xs text-white/20 italic mt-4">{data.methodology_note}</p>
+      )}
+      {data.ceo_triggers && data.ceo_triggers.length > 0 && (
+        <CeoTriggersSection triggers={data.ceo_triggers} />
+      )}
+    </SectionCard>
+  );
+}
+
+function AdTrafficImpactSection({ data }: { data: AdTrafficImpact }) {
+  const hasWaste = data.est_wasted_ad_spend_pct != null;
+  if (!data.bounce_drivers.length && !hasWaste) return null;
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-3">Ad-klik detail</p>
+      <div className="flex gap-6 mb-3">
+        {data.est_post_click_bounce_pct != null && (
+          <div>
+            <p className="text-2xl font-bold text-[#c5a96f]">{data.est_post_click_bounce_pct}%</p>
+            <p className="text-xs text-white/40">bounce (basislijn {data.bounce_baseline_pct}%)</p>
+          </div>
+        )}
+        {hasWaste && (
+          <div>
+            <p className="text-2xl font-bold text-orange-400">{data.est_wasted_ad_spend_pct}%</p>
+            <p className="text-xs text-white/40">blind ad-budget</p>
+          </div>
+        )}
+      </div>
+      {data.bounce_drivers.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {data.bounce_drivers.map((d, i) => (
+            <li key={i} className="flex items-start gap-2 text-xs text-white/50">
+              <span className="text-[#c5a96f] shrink-0">↑</span>{d}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function AiAnalysisSection({ data }: { data: NonNullable<AiAnalysis> }) {
   const skills = [
     { title: "CRO & Conversie", insight: data.cro },
     { title: "Deliverability & Trust", insight: data.deliverability },
     { title: "Tech-architectuur", insight: data.tech_architecture },
+    { title: "Ad-klik bounce & omzetverlies", insight: data.ad_bounce_revenue },
   ];
   return (
     <SectionCard title="Analyse" dark>
@@ -610,6 +991,7 @@ function AiAnalysisSection({ data }: { data: NonNullable<AiAnalysis> }) {
             </div>
           ) : null
         )}
+        {data.shopify_migration && <ShopifyMigrationCard insight={data.shopify_migration} />}
       </div>
       {data.cross_section_thesis && (
         <blockquote className="mt-5 border-l-4 border-[#c5a96f] pl-4 text-sm text-white/70 italic">
@@ -620,9 +1002,24 @@ function AiAnalysisSection({ data }: { data: NonNullable<AiAnalysis> }) {
   );
 }
 
-function BloatSection({ items }: { items: BloatItem[] }) {
-  if (!items.length) return null;
+function BloatSection({ items, aiInsight }: { items: BloatItem[]; aiInsight?: AiBloatInsight | null }) {
   const totalSavings = items.reduce((sum, i) => sum + (i.est_savings_eur || 0), 0);
+
+  if (!items.length) {
+    if (!aiInsight) return null;
+    return (
+      <SectionCard title="Wat moet eruit" dark>
+        <p className="text-xs text-white/50 mb-3">Geen direct verwijderbare apps gedetecteerd — onderstaande kandidaten op basis van kosten en performance-signalen.</p>
+        {aiInsight.summary && <p className="text-sm text-white/80 mb-3">{aiInsight.summary}</p>}
+        {aiInsight.top_actions.length > 0 && (
+          <ul className="text-xs text-white/60 space-y-1 list-disc list-inside">
+            {aiInsight.top_actions.map((a, idx) => <li key={idx}>{a}</li>)}
+          </ul>
+        )}
+      </SectionCard>
+    );
+  }
+
   return (
     <SectionCard title="Wat moet eruit" dark>
       <div className="overflow-x-auto">
@@ -964,6 +1361,34 @@ function MultiRegionSection({ data }: { data: NonNullable<FullAuditData["multi_r
   );
 }
 
+function SanityExportSection({ data }: { data: Record<string, unknown> }) {
+  const [copied, setCopied] = useState(false);
+  const json = JSON.stringify(data, null, 2);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(json).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <SectionCard title="Sanity Export — Copy-Paste Klaar" dark>
+      <div className="flex justify-end mb-3">
+        <button
+          onClick={handleCopy}
+          className="text-xs px-4 py-2 rounded-lg bg-[#c5a96f] text-[#1a1f2e] font-semibold hover:opacity-90 transition-opacity"
+        >
+          {copied ? "Gekopieerd!" : "Kopieer JSON"}
+        </button>
+      </div>
+      <pre className="overflow-auto max-h-96 text-xs text-gray-300 font-mono leading-relaxed">
+        {json}
+      </pre>
+    </SectionCard>
+  );
+}
+
 function MarketplacesSection({ data }: { data: NonNullable<FullAuditData["marketplaces"]> }) {
   return (
     <SectionCard title="Marketplace & Review aanwezigheid">
@@ -1169,6 +1594,26 @@ export default function FullAuditResults() {
               {/* Sections */}
               {auditData.platform_architecture && <PlatformSection data={auditData.platform_architecture} />}
               {auditData.performance && <PerformanceSection data={auditData.performance} />}
+              {auditData.revenue_leak && (
+                <>
+                  {auditData.seranking_traffic ? (
+                    <div className="flex items-center gap-2 px-1 mb-1">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-medium text-emerald-700">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                        Gemeten via SE Ranking — {(auditData.seranking_traffic.monthly_organic_sessions + auditData.seranking_traffic.monthly_paid_sessions).toLocaleString("nl-NL")} bezoekers/mnd
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-1 mb-1">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-medium text-amber-700">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                        Schatting — traffic niet beschikbaar via SE Ranking
+                      </span>
+                    </div>
+                  )}
+                  <RevenueLeakSection data={auditData.revenue_leak} />
+                </>
+              )}
               {auditData.third_party_scripts && <ThirdPartySection data={auditData.third_party_scripts} />}
               {auditData.tracking_data_quality && <TrackingSection data={auditData.tracking_data_quality} />}
               {auditData.checkout_flow && <CheckoutSection data={auditData.checkout_flow} />}
@@ -1188,8 +1633,9 @@ export default function FullAuditResults() {
               {auditData.marketplaces && <MarketplacesSection data={auditData.marketplaces} />}
               {auditData.accessibility && <AccessibilitySection data={auditData.accessibility} />}
               {auditData.cro_observations.length > 0 && <CroSection items={auditData.cro_observations} />}
-              {auditData.bloat_what_must_go.length > 0 && <BloatSection items={auditData.bloat_what_must_go} />}
-              {auditData.ai_analysis && (auditData.ai_analysis.cro || auditData.ai_analysis.deliverability || auditData.ai_analysis.tech_architecture) && <AiAnalysisSection data={auditData.ai_analysis} />}
+              {(auditData.bloat_what_must_go.length > 0 || auditData.ai_analysis?.bloat) && <BloatSection items={auditData.bloat_what_must_go} aiInsight={auditData.ai_analysis?.bloat} />}
+              {auditData.ai_analysis && (auditData.ai_analysis.cro || auditData.ai_analysis.deliverability || auditData.ai_analysis.tech_architecture || auditData.ai_analysis.ad_bounce_revenue) && <AiAnalysisSection data={auditData.ai_analysis} />}
+              {auditData.sanity_export && <SanityExportSection data={auditData.sanity_export} />}
 
               {auditData.methodology_note && (
                 <p className="text-xs text-gray-400 italic text-center px-4">{auditData.methodology_note}</p>

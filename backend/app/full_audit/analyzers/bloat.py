@@ -1,5 +1,7 @@
 from app.full_audit.schemas import BloatCategory, BloatItem, CostAnalysis, ThirdPartyScripts
 
+_BLOCKING_TIME_THRESHOLD_MS = 150.0
+
 
 def build_bloat_list(
     third_party: ThirdPartyScripts | None,
@@ -18,13 +20,37 @@ def build_bloat_list(
                     cost_by_name[tool.strip()] = row.savings
 
     for script in third_party.detected_scripts:
-        if script.necessity not in ("removable", "replaceable"):
+        is_hard_removable = script.necessity in ("removable", "replaceable")
+        has_cost = (
+            (script.monthly_cost_eur and script.monthly_cost_eur > 0)
+            or script.name in cost_by_name
+        )
+        has_blocking = (
+            script.blocking_time_ms and script.blocking_time_ms > _BLOCKING_TIME_THRESHOLD_MS
+        )
+
+        if not (is_hard_removable or has_cost or has_blocking):
             continue
 
         category: BloatCategory = "script"
-        reason = script.recommendation or (
-            f"{'Remove' if script.necessity == 'removable' else 'Replace'} — {script.purpose or 'redundant'}"
-        )
+        if is_hard_removable:
+            reason = script.recommendation or (
+                f"{'Remove' if script.necessity == 'removable' else 'Replace'} — {script.purpose or 'redundant'}"
+            )
+        else:
+            parts: list[str] = []
+            if script.monthly_cost_eur and script.monthly_cost_eur > 0:
+                parts.append(f"€{script.monthly_cost_eur:.0f}/mo kosten")
+            elif script.name in cost_by_name:
+                parts.append(f"€{cost_by_name[script.name]:.0f}/mo besparing mogelijk")
+            if script.blocking_time_ms and script.blocking_time_ms > _BLOCKING_TIME_THRESHOLD_MS:
+                parts.append(f"{script.blocking_time_ms:.0f}ms blocking time")
+            reason = (
+                f"Mogelijk te vervangen — {', '.join(parts)}"
+                if parts
+                else (script.recommendation or script.purpose or "potentiële kostenbesparing")
+            )
+
         est_savings = cost_by_name.get(script.name) or (
             script.monthly_cost_eur if script.monthly_cost_eur and script.monthly_cost_eur > 0 else None
         )

@@ -1,22 +1,106 @@
+import re
+
 from bs4 import BeautifulSoup
 
-from app.full_audit.schemas import CheckoutFlow, CroObservation, Performance
+from app.full_audit.schemas import CheckoutFlow, CroObservation, Performance, RichResultsHealth
+
+_REVIEW_PLATFORM_DOMAINS = [
+    "trustpilot.com", "kiyoh.com", "feedbackcompany.com", "trustedshops",
+    "judge.me", "loox.io", "yotpo.com", "reviews.io", "okendo", "stamped.io",
+    "reviewmeester.nl", "webwinkelkeur.nl", "klantenvertellen.nl",
+    "verified-reviews.com", "shopify.com/product-reviews",
+]
+
+_RATING_PATTERN = re.compile(
+    r"""(\d[.,]?\d?)\s*(sterren|stars|\/5|\/10)|   # 4.8 sterren, 4/5
+        \b(\d{2,})\s+(reviews?|beoordelingen|ervaringen|klanten)\b""",
+    re.VERBOSE | re.IGNORECASE,
+)
+
+_PAGE_TYPE_PATTERNS: dict[str, list[str]] = {
+    "pdp": ["/product/", "/products/", "/p/", "/shop/", "/item/"],
+    "collection": ["/collections/", "/category/", "/c/", "/shop-all", "/categorie"],
+    "cart": ["/cart", "/winkelwagen", "/basket"],
+    "checkout": ["/checkout"],
+    "account": ["/account", "/login", "/register", "/inloggen"],
+}
+
+_PAGE_LABELS = {
+    "homepage": "Homepage",
+    "pdp": "Product page (PDP)",
+    "collection": "Collection page",
+    "cart": "Cart",
+    "checkout": "Checkout",
+    "account": "Account",
+    "other": "Other",
+}
+
+_SP_EST_IMPACT = {
+    "pdp": (
+        "High — winkels met zichtbare reviews zien 15-20% hogere add-to-cart rates. "
+        "Social proof op PDP is de directe vertrouwensdrempel voor een aankoop."
+    ),
+    "collection": (
+        "Medium — review badges op collection-tiles verhogen click-through naar PDP "
+        "en reduceren bounce op categoriepagina's."
+    ),
+    "homepage": (
+        "High — trust signals op de homepage reduceren bounce rate voor nieuwe bezoekers aantoonbaar. "
+        "Ontbrekend sociaal bewijs verhoogt de drempel voor een eerste aankoop."
+    ),
+}
 
 
-def _has_social_proof_on_page(html: str) -> bool:
+def _classify_page(url: str, is_first: bool) -> str:
+    if is_first:
+        return "homepage"
+    lower = url.lower()
+    for ptype, patterns in _PAGE_TYPE_PATTERNS.items():
+        if any(p in lower for p in patterns):
+            return ptype
+    return "other"
+
+
+def _sample_pages_by_type(pages: list[dict]) -> dict[str, dict]:
+    """Return one representative page per type — first match wins."""
+    sampled: dict[str, dict] = {}
+    for i, page in enumerate(pages):
+        ptype = _classify_page(page.get("url", ""), is_first=(i == 0))
+        sampled.setdefault(ptype, page)
+    return sampled
+
+
+def _detect_social_proof(html: str, has_aggregate_rating: bool = False) -> tuple[bool, str | None]:
+    """Return (detected, evidence). Three cascading signals:
+    1. Known review-platform domain in src/href attributes
+    2. AggregateRating JSON-LD (passed in from rich_results)
+    3. Rating-number + label pattern in text (strict regex, not loose keywords)
+    """
+    # Signal 1: review platform script/iframe
     soup = BeautifulSoup(html, "lxml")
-    text = soup.get_text(separator=" ").lower()
-    indicators = [
-        "review", "rating", "stars", "testimonial", "verified",
-        "ster", "beoordeling", "klanten", "ervaringen",
-    ]
-    return any(indicator in text for indicator in indicators)
+    for tag in soup.find_all(["script", "iframe", "a", "img"]):
+        src = str(tag.get("src", "")) + str(tag.get("href", "")) + str(tag.get("data-src", ""))
+        for domain in _REVIEW_PLATFORM_DOMAINS:
+            if domain in src.lower():
+                return True, f"{domain} widget gedetecteerd"
+
+    # Signal 2: structured data
+    if has_aggregate_rating:
+        return True, "AggregateRating schema aanwezig"
+
+    # Signal 3: rating number + label strict pattern
+    text = soup.get_text(separator=" ")
+    if _RATING_PATTERN.search(text):
+        return True, "rating-cijfer patroon gevonden in paginatekst"
+
+    return False, None
 
 
 def make_cro_observations(
     pages: list[dict],
     performance: Performance | None,
     checkout: CheckoutFlow | None,
+    rich_results: RichResultsHealth | None = None,
 ) -> list[CroObservation]:
     observations: list[CroObservation] = []
 
@@ -48,25 +132,26 @@ def make_cro_observations(
                 est_impact="High — optimal checkout forms have 8-10 fields; excess fields increase abandonment.",
             ))
 
-    # 3. Social proof on PDP
-    pdp_pages = [p for p in pages if "/product" in p.get("url", "")]
-    if pdp_pages:
-        pdp_has_sp = _has_social_proof_on_page(pdp_pages[0]["html"])
-        if not pdp_has_sp:
-            observations.append(CroObservation(
-                page="Product page (PDP)",
-                observation="No social proof signals (reviews, ratings, testimonials) detected on product page.",
-                severity="medium",
-                est_impact="Medium — stores with visible reviews typically see 15-20% higher add-to-cart rates.",
-            ))
-    elif pages:
-        # Fallback: check homepage
-        if not _has_social_proof_on_page(pages[0]["html"]):
-            observations.append(CroObservation(
-                page="Homepage",
-                observation="No social proof signals detected on homepage.",
-                severity="low",
-                est_impact="Low — trust signals on homepage reduce bounce rate for new visitors.",
-            ))
+    # 3. Social proof — check each relevant page type separately
+    has_agg_rating = bool(rich_results and rich_results.has_aggregate_rating)
+    if pages:
+        sampled = _sample_pages_by_type(pages)
+        for ptype in ("pdp", "homepage", "collection"):
+            if ptype not in sampled:
+                continue
+            page = sampled[ptype]
+            sp_found, _ = _detect_social_proof(page["html"], has_agg_rating)
+            if not sp_found:
+                label = _PAGE_LABELS[ptype]
+                observations.append(CroObservation(
+                    page=label,
+                    observation=(
+                        f"Geen reviews, sterren of vertrouwenssignalen gedetecteerd op de {label.lower()}. "
+                        "Geen review-platform widget (Trustpilot, Kiyoh, etc.), geen AggregateRating schema, "
+                        "en geen rating-patroon in paginatekst."
+                    ),
+                    severity="high",
+                    est_impact=_SP_EST_IMPACT.get(ptype, "High — ontbrekend sociaal bewijs verhoogt de aankoopdrempel."),
+                ))
 
     return observations

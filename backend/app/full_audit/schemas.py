@@ -19,6 +19,8 @@ PciStatus = Literal["likely", "concerns", "n-a"]
 ServerSideTagging = Literal["yes", "no", "to-validate"]
 BloatCategory = Literal["app", "script", "code", "process"]
 CroSeverity = Literal["high", "medium", "low"]
+ShopifyMigrationRecommendation = Literal["aanbevolen", "overwegen", "niet-nu", "af-te-raden", "niet-van-toepassing"]
+MigrationComplexity = Literal["laag", "middel", "hoog"]
 SpfStatus = Literal["valid", "missing", "misconfigured"]
 DmarcPolicy = Literal["none", "quarantine", "reject", "missing"]
 MetaCapiStatus = Literal["detected", "browser-only", "absent"]
@@ -104,6 +106,7 @@ class TrackingDataQuality(BaseModel):
     consent_mode_status: ConsentModeStatus | None = None
     cmp_provider: str | None = None
     est_attribution_loss_percent: float | None = None
+    attribution_loss_confidence: str = "outside-only-estimate"
     server_side_tagging: ServerSideTagging | None = None
     duplicate_tracking_detected: bool | None = None
     notes: str | None = None
@@ -192,13 +195,139 @@ class AiSkillInsight(BaseModel):
     summary: str
     top_actions: list[str] = []
     signals_used: list[str] = []
+    observations: list[CroObservation] = []
+
+
+class RoadmapPhase(BaseModel):
+    phase: int
+    name: str
+    timeframe: str
+    objective: str
+    actions: list[str] = []
+    expected_outcome: str
+    est_monthly_revenue_impact_eur: float | None = None
+    dependencies: list[str] = []
+
+
+class StrategicRoadmap(BaseModel):
+    skill: str = "roadmap"
+    executive_summary: str
+    north_star_metric: str
+    top_priorities: list[str] = []
+    quick_wins: list[str] = []
+    phases: list[RoadmapPhase] = []
+    total_timeline: str | None = None
+    signals_used: list[str] = []
 
 
 class AiAnalysis(BaseModel):
     cro: AiSkillInsight | None = None
     deliverability: AiSkillInsight | None = None
     tech_architecture: AiSkillInsight | None = None
+    shopify_migration: ShopifyMigrationInsight | None = None
+    ad_bounce_revenue: AiSkillInsight | None = None
+    bloat: AiBloatInsight | None = None
+    roadmap: StrategicRoadmap | None = None
     cross_section_thesis: str | None = None
+
+
+class SeRankingTraffic(BaseModel):
+    domain: str
+    monthly_organic_sessions: int = 0
+    monthly_paid_sessions: int = 0
+    organic_keywords_count: int = 0
+    paid_keywords_count: int = 0
+    est_organic_traffic_value_usd: float = 0.0
+    raw_response: dict | None = None
+
+
+class AdTrafficImpact(BaseModel):
+    est_post_click_bounce_pct: float | None = None
+    bounce_baseline_pct: float = 45.0
+    est_drop_off_per_1000_clicks: int | None = None
+    est_monthly_lost_revenue_eur_low: float | None = None
+    est_monthly_lost_revenue_eur_high: float | None = None
+    est_wasted_ad_spend_pct: float | None = None
+    bounce_drivers: list[str] = []
+    methodology_note: str | None = None
+    data_source: Literal["measured", "heuristic"] = "heuristic"
+
+
+MetricStatus = Literal["good", "warning", "critical", "not-measured"]
+
+
+class RevenueLeakMetric(BaseModel):
+    metric: str
+    what_we_measure: str
+    priority: Literal["critical", "high", "medium", "low"]
+    monthly_loss_eur: float | None = None
+    annual_loss_eur: float | None = None
+    calculation_note: str
+    signal: str | None = None
+    status: MetricStatus = "not-measured"
+
+
+class CeoTriggerKpi(BaseModel):
+    category: str
+    kpi: str
+    what_ceo_sees: str
+    benchmark: str | None = None
+    alarm_signal: str
+    real_meaning: str
+    tradual_pitch: str
+    tradual_solution: str
+    triggered: bool = False
+
+
+class RoiCalculation(BaseModel):
+    monthly_leak_eur: float
+    annual_leak_eur: float
+    stack_rebuild_cost_eur: float = 35000.0
+    payback_months: float | None = None
+    year_one_net_return_eur: float
+
+
+class RevenueLeakLayer(BaseModel):
+    layer: int
+    name: str
+    core_question: str
+    est_monthly_loss_eur: float | None = None
+    est_annual_loss_eur: float | None = None
+    metric_count: int = 0
+    leads_to: str
+    key_signals: list[str] = []
+    metrics: list[RevenueLeakMetric] = []
+    summary: str | None = None
+    good_signals: list[str] = []
+    improvement_signals: list[str] = []
+    readiness_score: int | None = None
+
+
+class RevenueLeakReport(BaseModel):
+    layers: list[RevenueLeakLayer] = []
+    total_monthly_loss_eur: float | None = None
+    total_annual_loss_eur: float | None = None
+    direct_monthly_loss_eur: float | None = None
+    direct_annual_loss_eur: float | None = None
+    efficiency_monthly_uplift_eur: float | None = None
+    efficiency_annual_uplift_eur: float | None = None
+    methodology_note: str | None = None
+    ceo_triggers: list[CeoTriggerKpi] = []
+    roi: RoiCalculation | None = None
+    data_source: Literal["measured", "heuristic"] = "heuristic"
+
+
+class ShopifyMigrationInsight(BaseModel):
+    skill: str = "shopify_migration"
+    summary: str
+    recommendation: ShopifyMigrationRecommendation
+    rationale: str
+    migration_complexity: MigrationComplexity | None = None
+    estimated_timeline: str | None = None
+    key_wins: list[str] = []
+    key_risks: list[str] = []
+    top_actions: list[str] = []
+    signals_used: list[str] = []
 
 
 class BloatItem(BaseModel):
@@ -207,6 +336,26 @@ class BloatItem(BaseModel):
     reason: str | None = None
     est_savings_eur: float | None = None
     est_performance_gain_ms: float | None = None
+
+
+BloatConfidence = Literal["high", "medium", "low"]
+
+
+class AiBloatCandidate(BaseModel):
+    item: str
+    category: BloatCategory
+    reason: str
+    est_savings_eur: float | None = None
+    est_performance_gain_ms: float | None = None
+    confidence: BloatConfidence = "medium"
+
+
+class AiBloatInsight(BaseModel):
+    skill: str = "bloat"
+    summary: str
+    top_actions: list[str] = []
+    signals_used: list[str] = []
+    candidates: list[AiBloatCandidate] = []
 
 
 class DnsEmailHealth(BaseModel):
@@ -315,6 +464,7 @@ class FullAuditData(BaseModel):
     industry: str | None = None
     contact_email: str | None = None
     contact_person: str | None = None
+    estimated_annual_revenue_eur: float | None = None
     intro: str | None = None
     core_thesis: str | None = None
     audit_summary: str | None = None
@@ -344,7 +494,11 @@ class FullAuditData(BaseModel):
     returns: ReturnsHealth | None = None
     multi_region: MultiRegionHealth | None = None
     marketplaces: MarketplacePresence | None = None
+    ad_traffic_impact: AdTrafficImpact | None = None
+    revenue_leak: RevenueLeakReport | None = None
+    seranking_traffic: SeRankingTraffic | None = None
     ai_analysis: AiAnalysis | None = None
+    sanity_export: dict | None = None
 
 
 class FullAuditRequest(BaseModel):
@@ -354,6 +508,7 @@ class FullAuditRequest(BaseModel):
     industry: str | None = None
     contact_email: str | None = None
     contact_person: str | None = None
+    estimated_annual_revenue_eur: float | None = None
 
 
 class FullAuditCreateResponse(BaseModel):

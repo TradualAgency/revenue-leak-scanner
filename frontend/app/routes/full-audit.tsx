@@ -37,6 +37,7 @@ export default function FullAuditIntake() {
   const [scanLevel, setScanLevel] = useState<ScanLevel>("outside-only");
   const [industry, setIndustry] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [annualRevenue, setAnnualRevenue] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,12 +47,14 @@ export default function FullAuditIntake() {
     setLoading(true);
     setError(null);
     try {
+      const parsedRevenue = annualRevenue.trim() ? Number(annualRevenue.trim()) : undefined;
       const res = await createFullAudit({
         store_url: storeUrl.trim(),
         company_name: companyName.trim() || undefined,
         scan_level: scanLevel,
         industry: industry.trim() || undefined,
         contact_email: contactEmail.trim() || undefined,
+        estimated_annual_revenue_eur: parsedRevenue && parsedRevenue > 0 ? parsedRevenue : undefined,
       });
       navigate(`/full-audit/${res.id}`);
     } catch (err) {
@@ -162,6 +165,22 @@ export default function FullAuditIntake() {
                 placeholder="naam@bedrijf.com"
                 className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
               />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-gray-700">Geschatte jaaromzet (EUR)</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={annualRevenue}
+                onChange={(e) => setAnnualRevenue(e.target.value)}
+                placeholder="7000000"
+                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+              />
+              <p className="text-xs text-gray-400">
+                Optioneel — schaalt alle revenue-leak bedragen naar de werkelijke omzet. Leeg laten = €108k/jaar default.
+              </p>
             </div>
 
             <button

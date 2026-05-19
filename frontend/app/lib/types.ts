@@ -58,6 +58,7 @@ export interface FullAuditRequest {
   industry?: string;
   contact_email?: string;
   contact_person?: string;
+  estimated_annual_revenue_eur?: number;
 }
 
 export interface FullAuditCreateResponse {
@@ -115,11 +116,130 @@ export interface AiSkillInsight {
   signals_used: string[];
 }
 
+export interface ShopifyMigrationInsight {
+  skill: string;
+  summary: string;
+  recommendation: "aanbevolen" | "overwegen" | "niet-nu" | "af-te-raden" | "niet-van-toepassing";
+  rationale: string;
+  migration_complexity: "laag" | "middel" | "hoog" | null;
+  estimated_timeline: string | null;
+  key_wins: string[];
+  key_risks: string[];
+  top_actions: string[];
+  signals_used: string[];
+}
+
+export interface AiBloatCandidate {
+  item: string;
+  category: "app" | "script" | "code" | "process";
+  reason: string;
+  est_savings_eur: number | null;
+  est_performance_gain_ms: number | null;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface AiBloatInsight {
+  skill: string;
+  summary: string;
+  top_actions: string[];
+  signals_used: string[];
+  candidates: AiBloatCandidate[];
+}
+
 export interface AiAnalysis {
   cro: AiSkillInsight | null;
   deliverability: AiSkillInsight | null;
   tech_architecture: AiSkillInsight | null;
+  shopify_migration: ShopifyMigrationInsight | null;
+  ad_bounce_revenue: AiSkillInsight | null;
+  bloat: AiBloatInsight | null;
   cross_section_thesis: string | null;
+}
+
+export type DataSource = "measured" | "heuristic";
+
+export interface SeRankingTraffic {
+  domain: string;
+  monthly_organic_sessions: number;
+  monthly_paid_sessions: number;
+  organic_keywords_count: number;
+  paid_keywords_count: number;
+  est_organic_traffic_value_usd: number;
+}
+
+export interface AdTrafficImpact {
+  est_post_click_bounce_pct: number | null;
+  bounce_baseline_pct: number;
+  est_drop_off_per_1000_clicks: number | null;
+  est_monthly_lost_revenue_eur_low: number | null;
+  est_monthly_lost_revenue_eur_high: number | null;
+  est_wasted_ad_spend_pct: number | null;
+  bounce_drivers: string[];
+  methodology_note: string | null;
+  data_source: DataSource;
+}
+
+export type MetricStatus = "good" | "warning" | "critical" | "not-measured";
+
+export interface RevenueLeakMetric {
+  metric: string;
+  what_we_measure: string;
+  priority: "critical" | "high" | "medium" | "low";
+  monthly_loss_eur: number | null;
+  annual_loss_eur: number | null;
+  calculation_note: string;
+  signal: string | null;
+  status: MetricStatus;
+}
+
+export interface CeoTriggerKpi {
+  category: string;
+  kpi: string;
+  what_ceo_sees: string;
+  benchmark: string | null;
+  alarm_signal: string;
+  real_meaning: string;
+  tradual_pitch: string;
+  tradual_solution: string;
+  triggered: boolean;
+}
+
+export interface RoiCalculation {
+  monthly_leak_eur: number;
+  annual_leak_eur: number;
+  stack_rebuild_cost_eur: number;
+  payback_months: number | null;
+  year_one_net_return_eur: number;
+}
+
+export interface RevenueLeakLayer {
+  layer: number;
+  name: string;
+  core_question: string;
+  est_monthly_loss_eur: number | null;
+  est_annual_loss_eur: number | null;
+  metric_count: number;
+  leads_to: string;
+  key_signals: string[];
+  metrics: RevenueLeakMetric[];
+  summary: string | null;
+  good_signals: string[];
+  improvement_signals: string[];
+  readiness_score: number | null;
+}
+
+export interface RevenueLeakReport {
+  layers: RevenueLeakLayer[];
+  total_monthly_loss_eur: number | null;
+  total_annual_loss_eur: number | null;
+  direct_monthly_loss_eur: number | null;
+  direct_annual_loss_eur: number | null;
+  efficiency_monthly_uplift_eur: number | null;
+  efficiency_annual_uplift_eur: number | null;
+  methodology_note: string | null;
+  ceo_triggers: CeoTriggerKpi[];
+  roi: RoiCalculation | null;
+  data_source: DataSource;
 }
 
 export interface BloatItem {
@@ -234,6 +354,7 @@ export interface FullAuditData {
   company_name: string | null;
   scan_level: ScanLevel;
   industry: string | null;
+  estimated_annual_revenue_eur: number | null;
   core_thesis: string | null;
   audit_summary: string | null;
   biggest_tech_risk: string | null;
@@ -349,7 +470,11 @@ export interface FullAuditData {
   returns: ReturnsHealth | null;
   multi_region: MultiRegionHealth | null;
   marketplaces: MarketplacePresence | null;
+  ad_traffic_impact: AdTrafficImpact | null;
+  revenue_leak: RevenueLeakReport | null;
+  seranking_traffic: SeRankingTraffic | null;
   ai_analysis: AiAnalysis | null;
+  sanity_export: Record<string, unknown> | null;
 }
 
 export interface FullAuditResponse {

@@ -60,7 +60,7 @@ def _estimate_attribution_loss(
         loss += 20.0
     if pixels in ("partial", "missing"):
         loss += 15.0
-    if capi in ("partial", "missing", "to-validate"):
+    if capi in ("partial", "missing"):
         loss += 10.0
     if duplicate:
         loss += 5.0

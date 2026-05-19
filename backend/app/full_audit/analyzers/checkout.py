@@ -36,10 +36,60 @@ def _count_address_fields(html: str) -> int:
     return count
 
 
-def _detect_guest_checkout(html: str) -> bool:
+_GUEST_POSITIVE = [
+    # English
+    "continue as guest", "guest checkout", "checkout as guest", "check out as guest",
+    "order as guest", "buy as guest", "no account needed", "without an account",
+    # Dutch
+    "als gast", "doorgaan als gast", "bestellen als gast", "afrekenen als gast",
+    "bestellen zonder account", "afrekenen zonder account", "betalen zonder account",
+    "doorgaan zonder account", "zonder account bestellen", "zonder account afrekenen",
+    "zonder registratie", "geen account nodig", "verder zonder account",
+    # German (some NL stores have multilingual checkouts)
+    "als gast bestellen", "ohne konto bestellen",
+]
+
+_GUEST_NEGATIVE = [
+    # English
+    "must create an account", "account required to checkout", "login required to checkout",
+    "sign in to continue", "log in to continue", "registration required",
+    # Dutch
+    "account verplicht", "registratie verplicht", "inloggen verplicht",
+    "account aanmaken om af te rekenen", "inloggen om af te rekenen",
+    "u moet ingelogd zijn", "je moet ingelogd zijn",
+]
+
+
+def _detect_guest_checkout(html: str) -> bool | None:
+    """Return True if guest checkout is detected, False if explicitly blocked,
+    None if undetermined. Most Shopify stores default to guest unless customer
+    accounts are set to required — so absence of phrases ≠ no guest checkout."""
     soup = BeautifulSoup(html, "lxml")
     text = soup.get_text(separator=" ").lower()
-    return any(phrase in text for phrase in ["continue as guest", "guest checkout", "checkout as guest", "als gast"])
+
+    # Explicit negative signals win — if we see account-required copy, no guest
+    for phrase in _GUEST_NEGATIVE:
+        if phrase in text:
+            return False
+
+    # Positive signals — explicit guest copy
+    for phrase in _GUEST_POSITIVE:
+        if phrase in text:
+            return True
+
+    # Heuristic: if there's a checkout email field and no required password field, guest is likely allowed
+    email_field = soup.find("input", attrs={"type": "email"}) or soup.find("input", attrs={"name": lambda v: v and "email" in v.lower()})
+    password_required = False
+    for pw in soup.find_all("input", attrs={"type": "password"}):
+        if pw.get("required") is not None or pw.get("aria-required") == "true":
+            password_required = True
+            break
+    if email_field and not password_required:
+        return True
+    if password_required and not email_field:
+        return False
+
+    return None
 
 
 def _detect_payment_methods(html: str) -> list[str]:
