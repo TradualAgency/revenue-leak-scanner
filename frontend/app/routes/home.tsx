@@ -122,43 +122,53 @@ const faqs = [
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[#FAFAF8] text-gray-900 flex flex-col">
+    <div className="min-h-screen bg-tradual-bg text-tradual-primary flex flex-col">
       <Header />
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-[#0a2f23] to-[#1a4a3a] text-white py-28 px-4">
+      <section className="bg-gradient-to-br from-tradual-primary to-tradual-primary-light text-white py-28 px-4">
         <div className="max-w-4xl mx-auto text-center flex flex-col items-center gap-6">
-          <div className="inline-block bg-white/10 text-[#c5a96f] text-xs font-medium uppercase tracking-widest px-4 py-1.5 rounded-full">
-            Free Revenue Audit
-          </div>
-          <h1
-            className="text-4xl sm:text-5xl md:text-6xl font-semibold leading-tight"
+          <p
+            className="uppercase text-tradual-accent text-[11px] tracking-[0.18em]"
             style={{ fontFamily: "var(--font-serif)" }}
           >
-            Unlock the Revenue Your Store
+            Free Revenue Leak Audit
+          </p>
+          <h1
+            className="text-4xl sm:text-5xl md:text-[64px] font-medium leading-[1.05]"
+            style={{ fontFamily: "var(--font-serif)" }}
+          >
+            Unlock the revenue your store
             <br />
-            <span className="text-[#c5a96f]">Is Leaving on the Table.</span>
+            is leaving on the table.
           </h1>
-          <p className="text-[#c5a96f] font-medium text-lg">Get Your Free Audit in 60 Seconds.</p>
-          <p className="text-lg sm:text-xl text-gray-300 max-w-2xl font-light">
+          <p className="text-lg sm:text-xl text-white/80 max-w-2xl leading-relaxed">
             We scan your store's speed, plugins, and infrastructure — then show you exactly how much revenue you're losing and how to get it back.
           </p>
-          <a
-            href="#scan"
-            className="bg-[#c5a96f] hover:bg-[#b8975e] text-white font-medium px-8 py-4 rounded-xl text-lg transition-colors shadow-lg tracking-wide"
-          >
-            Get My Free Audit
-          </a>
-          <p className="text-gray-400 text-sm">No credit card required · Results in 60 seconds</p>
+          <div className="flex flex-col sm:flex-row items-center gap-4 mt-2">
+            <a
+              href="#scan"
+              className="inline-flex items-center justify-center bg-tradual-accent hover:opacity-90 text-tradual-primary font-medium px-8 py-3.5 text-base transition-opacity tracking-wide"
+            >
+              Get My Free Audit
+            </a>
+            <a
+              href="#how-it-works"
+              className="inline-flex items-center justify-center bg-transparent border border-tradual-accent text-tradual-accent hover:bg-tradual-accent/10 font-medium px-8 py-3.5 text-base transition-colors tracking-wide"
+            >
+              How It Works
+            </a>
+          </div>
+          <p className="text-white/50 text-sm mt-1">No credit card required &middot; Results in 60 seconds</p>
         </div>
       </section>
 
       {/* Social Proof Bar */}
-      <section className="py-8 px-4 bg-white border-b border-gray-100">
+      <section className="py-8 px-4 bg-white border-b border-tradual-border">
         <div className="max-w-4xl mx-auto text-center">
-          <p className="text-sm text-gray-500 font-medium">
+          <p className="text-sm text-tradual-body font-medium">
             Trusted by store owners generating over{" "}
-            <span className="text-[#0a2f23] font-semibold">$50M in combined annual revenue</span>
+            <span className="text-tradual-primary font-semibold">$50M in combined annual revenue</span>
           </p>
         </div>
       </section>
@@ -166,20 +176,28 @@ export default function Home() {
       {/* Pain Points */}
       <section className="py-24 px-4">
         <div className="max-w-6xl mx-auto">
-          <h2
-            className="text-3xl font-semibold text-center mb-14 text-gray-900"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            Is Your Store Making These Costly Mistakes?
-          </h2>
+          <div className="text-center mb-14">
+            <p
+              className="uppercase text-tradual-accent text-[11px] tracking-[0.18em] mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              The problem
+            </p>
+            <h2
+              className="text-[32px] md:text-[44px] leading-[1.08] font-medium text-tradual-primary"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Is your store making these costly mistakes?
+            </h2>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {painPoints.map((point) => (
-              <div key={point.title} className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 flex flex-col gap-4">
-                <div className="w-14 h-14 rounded-xl bg-[#FAFAF8] flex items-center justify-center border border-gray-100">
+              <div key={point.title} className="bg-white p-8 border border-tradual-border flex flex-col gap-4">
+                <div className="w-14 h-14 flex items-center justify-center border border-tradual-border">
                   {point.icon}
                 </div>
-                <h3 className="text-xl font-semibold" style={{ fontFamily: "var(--font-serif)" }}>{point.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{point.description}</p>
+                <h3 className="text-xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>{point.title}</h3>
+                <p className="text-tradual-body text-sm leading-relaxed">{point.description}</p>
               </div>
             ))}
           </div>
@@ -187,28 +205,40 @@ export default function Home() {
       </section>
 
       {/* How It Works */}
-      <section id="how-it-works" className="py-24 px-4 bg-white">
+      <section id="how-it-works" className="py-24 px-4 bg-tradual-surface-muted">
         <div className="max-w-6xl mx-auto">
-          <h2
-            className="text-3xl font-semibold text-center mb-4 text-gray-900"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            How It Works
-          </h2>
-          <p className="text-center text-gray-500 mb-16 max-w-xl mx-auto">
-            Three simple steps to uncover exactly where your revenue is going.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+          <div className="mb-12">
+            <p
+              className="uppercase text-tradual-accent text-[11px] tracking-[0.18em] mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              The process
+            </p>
+            <h2
+              className="text-[32px] md:text-[44px] leading-[1.08] font-medium text-tradual-primary mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              How it works
+            </h2>
+            <p className="text-tradual-body text-base md:text-lg max-w-xl">
+              Three simple steps to uncover exactly where your revenue is going.
+            </p>
+          </div>
+          <div className="divide-y divide-tradual-primary/10 border-y border-tradual-primary/10">
             {steps.map((s) => (
-              <div key={s.step} className="flex flex-col items-center text-center gap-4">
-                <div
-                  className="w-16 h-16 rounded-2xl bg-[#0a2f23] text-white flex items-center justify-center text-xl font-semibold shadow-md"
+              <div key={s.step} className="flex flex-col md:flex-row md:items-start gap-4 py-8">
+                <span
+                  className="text-[48px] leading-none text-tradual-accent/30 shrink-0 w-20 text-center md:text-left"
                   style={{ fontFamily: "var(--font-serif)" }}
                 >
                   {s.step}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xl text-tradual-primary mb-1" style={{ fontFamily: "var(--font-serif)" }}>
+                    {s.title}
+                  </h3>
+                  <p className="text-tradual-body text-sm md:text-base">{s.description}</p>
                 </div>
-                <h3 className="text-lg font-semibold">{s.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{s.description}</p>
               </div>
             ))}
           </div>
@@ -216,14 +246,22 @@ export default function Home() {
       </section>
 
       {/* Testimonials */}
-      <section className="py-24 px-4 bg-[#FAFAF8]">
+      <section className="py-24 px-4 bg-white">
         <div className="max-w-6xl mx-auto">
-          <h2
-            className="text-3xl font-semibold text-center mb-14 text-gray-900"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            Store Owners Are Already Saving Thousands
-          </h2>
+          <div className="text-center mb-14">
+            <p
+              className="uppercase text-tradual-accent text-[11px] tracking-[0.18em] mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Proof
+            </p>
+            <h2
+              className="text-[32px] md:text-[44px] leading-[1.08] font-medium text-tradual-primary"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Store owners are already saving thousands
+            </h2>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {testimonials.map((t) => (
               <TestimonialCard key={t.name} {...t} />
@@ -233,17 +271,25 @@ export default function Home() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-24 px-4 bg-white">
+      <section id="pricing" className="py-24 px-4 bg-tradual-surface-muted">
         <div className="max-w-4xl mx-auto">
-          <h2
-            className="text-3xl font-semibold text-center mb-4"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            Simple, Transparent Pricing
-          </h2>
-          <p className="text-center text-gray-500 mb-14 max-w-xl mx-auto">
-            Start for free. Upgrade when you want the full picture.
-          </p>
+          <div className="text-center mb-14">
+            <p
+              className="uppercase text-tradual-accent text-[11px] tracking-[0.18em] mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Pricing
+            </p>
+            <h2
+              className="text-[32px] md:text-[44px] leading-[1.08] font-medium text-tradual-primary mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Simple, transparent pricing
+            </h2>
+            <p className="text-tradual-body text-base md:text-lg max-w-xl mx-auto">
+              Start for free. Upgrade when you want the full picture.
+            </p>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
             <PricingCard
               tier="free"
@@ -278,15 +324,23 @@ export default function Home() {
       </section>
 
       {/* FAQ */}
-      <section className="py-24 px-4 bg-[#FAFAF8]">
+      <section className="py-24 px-4 bg-white">
         <div className="max-w-2xl mx-auto">
-          <h2
-            className="text-3xl font-semibold text-center mb-14 text-gray-900"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            Frequently Asked Questions
-          </h2>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-8">
+          <div className="text-center mb-14">
+            <p
+              className="uppercase text-tradual-accent text-[11px] tracking-[0.18em] mb-4"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              FAQ
+            </p>
+            <h2
+              className="text-[32px] md:text-[44px] leading-[1.08] font-medium text-tradual-primary"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              Frequently asked questions
+            </h2>
+          </div>
+          <div className="bg-white border border-tradual-border px-8">
             {faqs.map((faq) => (
               <FaqItem key={faq.question} question={faq.question} answer={faq.answer} />
             ))}
@@ -295,20 +349,26 @@ export default function Home() {
       </section>
 
       {/* Lead Capture Form */}
-      <section id="scan" className="py-24 px-4 bg-white">
+      <section id="scan" className="py-24 px-4 bg-tradual-surface-muted">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-10">
-            <h2
-              className="text-3xl font-semibold mb-3"
+            <p
+              className="uppercase text-tradual-accent text-[11px] tracking-[0.18em] mb-4"
               style={{ fontFamily: "var(--font-serif)" }}
             >
-              See How Much Revenue You're Missing
+              Get started
+            </p>
+            <h2
+              className="text-[32px] md:text-[44px] leading-[1.08] font-medium text-tradual-primary mb-3"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              See how much revenue you're missing
             </h2>
-            <p className="text-gray-500">
+            <p className="text-tradual-body">
               Takes 30 seconds. Your personalized report is ready in about a minute.
             </p>
           </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="bg-white border border-tradual-border p-8">
             <LeadCaptureForm />
           </div>
         </div>

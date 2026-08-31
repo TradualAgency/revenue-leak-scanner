@@ -40,7 +40,7 @@ function ConfidenceBadge({ confidence }: { confidence: string }) {
   const colors: Record<string, string> = {
     high: "bg-emerald-50 text-emerald-700",
     medium: "bg-yellow-50 text-yellow-700",
-    low: "bg-gray-100 text-gray-500",
+    low: "bg-gray-100 text-tradual-body",
   };
   return (
     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[confidence] ?? colors.low}`}>
@@ -109,19 +109,19 @@ export default function Results() {
       <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center px-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center flex flex-col gap-6">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-tradual-border p-10 text-center flex flex-col gap-6">
             <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto">
               <svg className="w-8 h-8 text-[#EF4444]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" />
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2" style={{ fontFamily: "var(--font-serif)" }}>Something went wrong</h2>
-              <p className="text-gray-500 text-sm">{error}</p>
+              <h2 className="text-xl font-semibold text-[#0a2f23] mb-2" style={{ fontFamily: "var(--font-serif)" }}>Something went wrong</h2>
+              <p className="text-tradual-body text-sm">{error}</p>
             </div>
             <Link
               to="/"
-              className="bg-[#0a2f23] hover:bg-[#1a4a3a] text-white font-medium px-6 py-3 rounded-lg transition-colors"
+              className="bg-[#0a2f23] hover:opacity-90 text-white font-medium px-6 py-3 transition-opacity"
             >
               Try Again
             </Link>
@@ -137,22 +137,22 @@ export default function Results() {
       <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center px-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center flex flex-col gap-6">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-tradual-border p-10 text-center flex flex-col gap-6">
             <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto">
               <svg className="w-8 h-8 text-[#EF4444]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2" style={{ fontFamily: "var(--font-serif)" }}>Scan Failed</h2>
-              <p className="text-gray-500 text-sm">
+              <h2 className="text-xl font-semibold text-[#0a2f23] mb-2" style={{ fontFamily: "var(--font-serif)" }}>Scan Failed</h2>
+              <p className="text-tradual-body text-sm">
                 We couldn't complete the scan for your store. This may be due to the site being
                 unreachable or having restrictions. Please try again with a different URL.
               </p>
             </div>
             <Link
               to="/"
-              className="bg-[#0a2f23] hover:bg-[#1a4a3a] text-white font-medium px-6 py-3 rounded-lg transition-colors"
+              className="bg-[#0a2f23] hover:opacity-90 text-white font-medium px-6 py-3 transition-opacity"
             >
               Try Again
             </Link>
@@ -172,8 +172,8 @@ export default function Results() {
 
           {/* Scanning state */}
           {isPending && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 flex flex-col items-center gap-8">
-              <div className="w-20 h-20 rounded-full bg-[#FAFAF8] border border-gray-100 flex items-center justify-center">
+            <div className="bg-white rounded-2xl border border-tradual-border p-10 flex flex-col items-center gap-8">
+              <div className="w-20 h-20 rounded-full bg-[#FAFAF8] border border-tradual-border flex items-center justify-center">
                 <svg
                   className="w-10 h-10 text-[#c5a96f] animate-spin"
                   fill="none"
@@ -188,7 +188,7 @@ export default function Results() {
                 </svg>
               </div>
               <div className="text-center">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-2" style={{ fontFamily: "var(--font-serif)" }}>Scanning Your Store</h2>
+                <h2 className="text-2xl font-semibold text-[#0a2f23] mb-2" style={{ fontFamily: "var(--font-serif)" }}>Scanning Your Store</h2>
                 <p className="text-[#c5a96f] font-medium text-sm animate-pulse">
                   {statusMessages[msgIndex]}
                 </p>
@@ -198,17 +198,17 @@ export default function Results() {
               {status && (status.pages_discovered != null || status.avg_load_time_ms != null) && (
                 <div className="w-full grid grid-cols-2 gap-4">
                   {status.pages_discovered != null && (
-                    <div className="bg-[#FAFAF8] rounded-xl p-4 text-center border border-gray-100">
+                    <div className="bg-tradual-surface-muted p-4 text-center border border-tradual-border">
                       <div className="text-2xl font-semibold text-[#0a2f23]">{status.pages_discovered}</div>
-                      <div className="text-xs text-gray-500 mt-1">Pages Discovered</div>
+                      <div className="text-xs text-tradual-body mt-1">Pages Discovered</div>
                     </div>
                   )}
                   {status.avg_load_time_ms != null && (
-                    <div className="bg-[#FAFAF8] rounded-xl p-4 text-center border border-gray-100">
+                    <div className="bg-tradual-surface-muted p-4 text-center border border-tradual-border">
                       <div className="text-2xl font-semibold text-[#0a2f23]">
                         {(status.avg_load_time_ms / 1000).toFixed(1)}s
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">Avg Load Time</div>
+                      <div className="text-xs text-tradual-body mt-1">Avg Load Time</div>
                     </div>
                   )}
                 </div>
@@ -221,22 +221,22 @@ export default function Results() {
             <>
               <div className="text-center">
                 <h1
-                  className="text-3xl font-semibold text-gray-900"
+                  className="text-3xl font-semibold text-[#0a2f23]"
                   style={{ fontFamily: "var(--font-serif)" }}
                 >
                   Your Audit Results
                 </h1>
-                <p className="text-gray-500 mt-2 text-sm">
+                <p className="text-tradual-body mt-2 text-sm">
                   Here's what we found. The numbers may surprise you.
                 </p>
               </div>
 
               {/* Section 1: Performance score */}
               {summary.performance_score != null && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 flex flex-col items-center gap-4">
-                  <h2 className="text-lg font-semibold text-gray-700">Performance Score</h2>
+                <div className="bg-white rounded-2xl border border-tradual-border p-8 flex flex-col items-center gap-4">
+                  <h2 className="text-lg font-semibold text-[#0a2f23]">Performance Score</h2>
                   <PerformanceGauge score={summary.performance_score} size={180} />
-                  <p className="text-sm text-gray-500 text-center max-w-sm">
+                  <p className="text-sm text-tradual-body text-center max-w-sm">
                     {summary.performance_score >= 70
                       ? "Your store is performing well. There's still room for improvement."
                       : summary.performance_score >= 40
@@ -248,32 +248,32 @@ export default function Results() {
 
               {/* Hero metrics */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+                <div className="bg-white rounded-2xl border border-tradual-border p-6 text-center">
                   <div className="text-3xl font-semibold text-[#EF4444]">
                     {summary.estimated_monthly_loss_min != null && summary.estimated_monthly_loss_max != null
                       ? `${fmt(summary.estimated_monthly_loss_min)} – ${fmt(summary.estimated_monthly_loss_max)}`
                       : "—"}
                   </div>
-                  <div className="text-xs text-gray-500 mt-2 font-medium uppercase tracking-wider">
+                  <div className="text-xs text-tradual-body mt-2 font-medium uppercase tracking-wider">
                     Est. Monthly Revenue Loss
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+                <div className="bg-white rounded-2xl border border-tradual-border p-6 text-center">
                   <div className="text-3xl font-semibold text-[#0a2f23]">
                     {summary.plugin_count ?? "—"}
                   </div>
-                  <div className="text-xs text-gray-500 mt-2 font-medium uppercase tracking-wider">
+                  <div className="text-xs text-tradual-body mt-2 font-medium uppercase tracking-wider">
                     Plugins Detected
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+                <div className="bg-white rounded-2xl border border-tradual-border p-6 text-center">
                   <div className="text-3xl font-semibold text-[#c5a96f]">
                     {fmt(summary.total_plugin_cost_monthly)}
-                    <span className="text-sm font-medium text-gray-400">/mo</span>
+                    <span className="text-sm font-medium text-tradual-body/60">/mo</span>
                   </div>
-                  <div className="text-xs text-gray-500 mt-2 font-medium uppercase tracking-wider">
+                  <div className="text-xs text-tradual-body mt-2 font-medium uppercase tracking-wider">
                     Plugin Subscription Costs
                   </div>
                 </div>
@@ -281,16 +281,16 @@ export default function Results() {
 
               {/* Section 2: Speed & Revenue Impact */}
               {(summary.avg_load_time_ms != null || summary.blended_loss_rate != null) && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-lg font-semibold text-gray-700 mb-5">Speed &amp; Revenue Impact</h2>
+                <div className="bg-white rounded-2xl border border-tradual-border p-6">
+                  <h2 className="text-lg font-semibold text-[#0a2f23] mb-5">Speed &amp; Revenue Impact</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {summary.avg_load_time_ms != null && (
                       <div>
                         <div className="text-3xl font-semibold text-[#0a2f23]">
                           {(summary.avg_load_time_ms / 1000).toFixed(2)}
-                          <span className="text-lg font-medium text-gray-400 ml-1">s</span>
+                          <span className="text-lg font-medium text-tradual-body/60 ml-1">s</span>
                         </div>
-                        <div className="text-sm text-gray-500 mt-1">Average Load Time</div>
+                        <div className="text-sm text-tradual-body mt-1">Average Load Time</div>
                         {summary.excess_load_time != null && summary.excess_load_time > 0 && (
                           <div className="text-xs text-[#EF4444] mt-1 font-medium">
                             +{summary.excess_load_time.toFixed(1)}s above benchmark
@@ -302,19 +302,19 @@ export default function Results() {
                       <div>
                         <div className="text-3xl font-semibold text-[#EF4444]">
                           {(summary.blended_loss_rate * 100).toFixed(1)}
-                          <span className="text-lg font-medium text-gray-400 ml-0.5">%</span>
+                          <span className="text-lg font-medium text-tradual-body/60 ml-0.5">%</span>
                         </div>
-                        <div className="text-sm text-gray-500 mt-1">Conversion Loss from Load Time</div>
-                        <div className="text-xs text-gray-400 mt-1">
+                        <div className="text-sm text-tradual-body mt-1">Conversion Loss from Load Time</div>
+                        <div className="text-xs text-tradual-body/60 mt-1">
                           of visitors drop off before converting
                         </div>
                       </div>
                     )}
                   </div>
                   {summary.avg_load_time_ms != null && (
-                    <p className="mt-5 text-sm text-gray-500 border-t border-gray-100 pt-4">
+                    <p className="mt-5 text-sm text-tradual-body border-t border-tradual-border pt-4">
                       Every second above 0.5s costs ~7% in conversions. Your store loads in{" "}
-                      <span className="font-semibold text-gray-700">
+                      <span className="font-semibold text-[#0a2f23]">
                         {(summary.avg_load_time_ms / 1000).toFixed(1)}s
                       </span>
                       {summary.excess_load_time != null && summary.excess_load_time > 0
@@ -327,29 +327,29 @@ export default function Results() {
 
               {/* Section 3: Detected Plugins */}
               {summary.plugins && summary.plugins.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-lg font-semibold text-gray-700 mb-5">
+                <div className="bg-white rounded-2xl border border-tradual-border p-6">
+                  <h2 className="text-lg font-semibold text-[#0a2f23] mb-5">
                     Detected Plugins ({summary.plugins.length})
                   </h2>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-gray-100">
-                          <th className="text-left py-2 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wide">Plugin</th>
-                          <th className="text-left py-2 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wide">Platform</th>
-                          <th className="text-right py-2 pr-4 text-xs font-semibold text-gray-400 uppercase tracking-wide">Cost/mo</th>
-                          <th className="text-right py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Confidence</th>
+                        <tr className="border-b border-tradual-border">
+                          <th className="text-left py-2 pr-4 text-xs font-semibold text-tradual-body/60 uppercase tracking-wide">Plugin</th>
+                          <th className="text-left py-2 pr-4 text-xs font-semibold text-tradual-body/60 uppercase tracking-wide">Platform</th>
+                          <th className="text-right py-2 pr-4 text-xs font-semibold text-tradual-body/60 uppercase tracking-wide">Cost/mo</th>
+                          <th className="text-right py-2 text-xs font-semibold text-tradual-body/60 uppercase tracking-wide">Confidence</th>
                         </tr>
                       </thead>
                       <tbody>
                         {summary.plugins.map((p) => (
-                          <tr key={p.slug} className="border-b border-gray-50 last:border-0">
-                            <td className="py-3 pr-4 font-medium text-gray-800">{p.name}</td>
-                            <td className="py-3 pr-4 text-gray-500 capitalize">{p.platform}</td>
-                            <td className="py-3 pr-4 text-right text-gray-700">
+                          <tr key={p.slug} className="border-b border-tradual-border last:border-0">
+                            <td className="py-3 pr-4 font-medium text-[#0a2f23]">{p.name}</td>
+                            <td className="py-3 pr-4 text-tradual-body capitalize">{p.platform}</td>
+                            <td className="py-3 pr-4 text-right text-[#0a2f23]">
                               {p.estimated_monthly_cost != null && Number(p.estimated_monthly_cost) > 0
                                 ? fmt(p.estimated_monthly_cost)
-                                : <span className="text-gray-400">free</span>}
+                                : <span className="text-tradual-body/60">free</span>}
                             </td>
                             <td className="py-3 text-right">
                               <ConfidenceBadge confidence={p.confidence} />
@@ -359,8 +359,8 @@ export default function Results() {
                       </tbody>
                       {summary.total_plugin_cost_monthly != null && Number(summary.total_plugin_cost_monthly) > 0 && (
                         <tfoot>
-                          <tr className="border-t-2 border-gray-200">
-                            <td className="pt-3 pr-4 font-semibold text-gray-700" colSpan={2}>Total</td>
+                          <tr className="border-t-2 border-tradual-border">
+                            <td className="pt-3 pr-4 font-semibold text-[#0a2f23]" colSpan={2}>Total</td>
                             <td className="pt-3 pr-4 text-right font-bold text-[#c5a96f]" colSpan={2}>
                               {fmt(summary.total_plugin_cost_monthly)}/mo
                             </td>
@@ -374,13 +374,13 @@ export default function Results() {
 
               {/* Section 4: Scanned Pages */}
               {summary.pages_scanned && summary.pages_scanned.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-lg font-semibold text-gray-700 mb-4">
+                <div className="bg-white rounded-2xl border border-tradual-border p-6">
+                  <h2 className="text-lg font-semibold text-[#0a2f23] mb-4">
                     Scanned Pages ({summary.pages_scanned.length})
                   </h2>
                   <ul className="flex flex-col gap-1.5">
                     {(pagesExpanded ? summary.pages_scanned : summary.pages_scanned.slice(0, 5)).map((url) => (
-                      <li key={url} className="text-sm text-gray-600 font-mono truncate bg-[#FAFAF8] rounded-lg px-3 py-1.5 border border-gray-100">
+                      <li key={url} className="text-sm text-tradual-body font-mono truncate bg-tradual-surface-muted px-3 py-1.5 border border-tradual-border">
                         {url}
                       </li>
                     ))}
@@ -400,11 +400,11 @@ export default function Results() {
 
               {/* Section 5: Quick Wins */}
               {summary.quick_wins && summary.quick_wins.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-lg font-semibold text-gray-700 mb-4">Quick Wins</h2>
+                <div className="bg-white rounded-2xl border border-tradual-border p-6">
+                  <h2 className="text-lg font-semibold text-[#0a2f23] mb-4">Quick Wins</h2>
                   <ul className="flex flex-col gap-3">
                     {summary.quick_wins.map((win) => (
-                      <li key={win} className="flex items-start gap-3 text-sm text-gray-700">
+                      <li key={win} className="flex items-start gap-3 text-sm text-[#0a2f23]">
                         <CheckIcon />
                         <span>{win}</span>
                       </li>
@@ -414,22 +414,22 @@ export default function Results() {
               )}
 
               {/* Section 6: CTA */}
-              <div className="relative overflow-hidden rounded-2xl bg-[#0a2f23] text-white p-8 ring-1 ring-[#c5a96f]/30">
+              <div className="relative overflow-hidden bg-[#0a2f23] text-white p-8">
                 <div className="relative z-10 flex flex-col gap-6">
                   <div>
-                    <span className="inline-block bg-[#c5a96f]/20 text-[#c5a96f] text-xs font-medium uppercase tracking-widest px-3 py-1 rounded-full mb-3">
+                    <p className="uppercase text-[#c5a96f] text-[11px] tracking-[0.18em] mb-3" style={{ fontFamily: "var(--font-serif)" }}>
                       Technical Optimization
-                    </span>
-                    <h2 className="text-2xl font-semibold" style={{ fontFamily: "var(--font-serif)" }}>We Build the Engine. You Bring the Driver.</h2>
-                    <p className="text-gray-400 text-sm mt-2 max-w-lg leading-relaxed">
+                    </p>
+                    <h2 className="text-2xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>We Build the Engine. You Bring the Driver.</h2>
+                    <p className="text-white/60 text-sm mt-2 max-w-lg leading-relaxed">
                       Tradual is not a CRO agency. We fix the technical foundation — speed, infrastructure, and the right plugin stack. Think of it as building the fastest car on the grid.
                     </p>
-                    <p className="text-gray-400 text-sm mt-3 max-w-lg leading-relaxed">
+                    <p className="text-white/60 text-sm mt-3 max-w-lg leading-relaxed">
                       Your CRO specialist optimizes how visitors convert once they arrive. We work together: Tradual builds the foundation, your CRO specialist drives the results.
                     </p>
                   </div>
 
-                  <div className="bg-white/5 rounded-xl p-5 flex flex-col gap-3 select-none border border-white/10">
+                  <div className="bg-white/5 p-5 flex flex-col gap-3 select-none border border-white/10">
                     <div className="text-xs font-medium text-[#c5a96f] uppercase tracking-wider mb-1">
                       What You Get
                     </div>
@@ -442,7 +442,7 @@ export default function Results() {
                       ].map((item) => (
                         <div key={item} className="flex items-center gap-2 text-sm">
                           <CheckIcon />
-                          <span className="text-gray-300">{item}</span>
+                          <span className="text-white/80">{item}</span>
                         </div>
                       ))}
                     </div>
@@ -450,7 +450,7 @@ export default function Results() {
 
                   <a
                     href="mailto:info@tradual.com"
-                    className="inline-block text-center bg-[#c5a96f] hover:bg-[#b8975e] text-white font-medium px-8 py-4 rounded-xl transition-colors shadow-lg w-full sm:w-auto tracking-wide"
+                    className="inline-block text-center bg-[#c5a96f] hover:opacity-90 text-[#0a2f23] font-medium px-8 py-4 transition-opacity w-full sm:w-auto tracking-wide"
                   >
                     Book Your Free Strategy Call →
                   </a>

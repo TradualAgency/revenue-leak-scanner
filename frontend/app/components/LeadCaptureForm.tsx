@@ -43,7 +43,7 @@ export default function LeadCaptureForm() {
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="email" className="text-sm font-medium text-gray-600">
+          <label htmlFor="email" className="text-sm font-medium text-tradual-body">
             Email address
           </label>
           <input
@@ -54,12 +54,12 @@ export default function LeadCaptureForm() {
             placeholder="you@example.com"
             value={form.email}
             onChange={handleChange}
-            className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
+            className="border border-tradual-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="store_url" className="text-sm font-medium text-gray-600">
+          <label htmlFor="store_url" className="text-sm font-medium text-tradual-body">
             Store URL
           </label>
           <input
@@ -70,12 +70,12 @@ export default function LeadCaptureForm() {
             placeholder="https://yourstore.com"
             value={form.store_url}
             onChange={handleChange}
-            className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
+            className="border border-tradual-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="platform" className="text-sm font-medium text-gray-600">
+          <label htmlFor="platform" className="text-sm font-medium text-tradual-body">
             Platform
           </label>
           <select
@@ -83,7 +83,7 @@ export default function LeadCaptureForm() {
             name="platform"
             value={form.platform}
             onChange={handleChange}
-            className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent bg-white"
+            className="border border-tradual-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent bg-white"
           >
             <option value="shopify">Shopify</option>
             <option value="woocommerce">WooCommerce</option>
@@ -92,7 +92,7 @@ export default function LeadCaptureForm() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="monthly_revenue" className="text-sm font-medium text-gray-600">
+          <label htmlFor="monthly_revenue" className="text-sm font-medium text-tradual-body">
             Monthly Revenue (USD)
           </label>
           <input
@@ -104,12 +104,12 @@ export default function LeadCaptureForm() {
             placeholder="e.g. 25000"
             value={form.monthly_revenue || ""}
             onChange={handleChange}
-            className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
+            className="border border-tradual-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
           />
         </div>
 
         <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label htmlFor="monthly_traffic" className="text-sm font-medium text-gray-600">
+          <label htmlFor="monthly_traffic" className="text-sm font-medium text-tradual-body">
             Monthly Visitors
           </label>
           <input
@@ -121,13 +121,13 @@ export default function LeadCaptureForm() {
             placeholder="e.g. 10000"
             value={form.monthly_traffic || ""}
             onChange={handleChange}
-            className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
+            className="border border-tradual-border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
           />
         </div>
       </div>
 
       {error && (
-        <p className="text-sm text-[#EF4444] bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+        <p className="text-sm text-[#EF4444] bg-red-50 border border-red-200 px-4 py-3">
           {error}
         </p>
       )}
@@ -135,12 +135,12 @@ export default function LeadCaptureForm() {
       <button
         type="submit"
         disabled={loading}
-        className="bg-[#c5a96f] hover:bg-[#b8975e] disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium py-4 rounded-lg text-base transition-colors tracking-wide"
+        className="bg-[#c5a96f] hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed text-[#0a2f23] font-medium py-4 text-base transition-opacity tracking-wide"
       >
         {loading ? "Starting scan..." : "Show Me My Revenue Leaks"}
       </button>
 
-      <p className="text-center text-xs text-gray-400">
+      <p className="text-center text-xs text-tradual-body/70">
         Free. No credit card required. Results in ~60 seconds.
       </p>
     </form>

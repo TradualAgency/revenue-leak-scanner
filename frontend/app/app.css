@@ -9,9 +9,21 @@
   --color-tradual-accent: #c5a96f;
   --color-tradual-danger: #EF4444;
   --color-tradual-bg: #FAFAF8;
+  --color-tradual-surface-muted: #f9f9f9;
+  --color-tradual-body: #475569;
+  --color-tradual-border: #e2e8f0;
 }
 
 html,
 body {
   @apply bg-[#FAFAF8];
+}
+
+.font-serif-heading {
+  font-family: var(--font-serif);
+}
+
+.eyebrow {
+  font-family: var(--font-serif);
+  letter-spacing: 0.18em;
 }

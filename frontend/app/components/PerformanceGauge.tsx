@@ -40,7 +40,7 @@ export default function PerformanceGauge({ score, size = 160 }: PerformanceGauge
           cy={cy}
           r={radius}
           fill="none"
-          stroke="#E5E7EB"
+          stroke="#e2e8f0"
           strokeWidth="12"
           strokeDasharray={`${arcLength} ${circumference - arcLength}`}
           strokeLinecap="round"
@@ -60,10 +60,10 @@ export default function PerformanceGauge({ score, size = 160 }: PerformanceGauge
       </svg>
       {/* Centered label */}
       <div className="flex flex-col items-center z-10">
-        <span className="text-4xl font-bold" style={{ color }} aria-label={`Score: ${score}`}>
+        <span className="text-4xl font-medium" style={{ color, fontFamily: "var(--font-serif)" }} aria-label={`Score: ${score}`}>
           {score}
         </span>
-        <span className="text-xs font-medium text-gray-500">{scoreLabel(score)}</span>
+        <span className="text-xs font-medium text-tradual-body uppercase tracking-wide">{scoreLabel(score)}</span>
       </div>
     </div>
   );

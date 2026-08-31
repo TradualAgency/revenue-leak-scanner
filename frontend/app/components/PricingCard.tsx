@@ -25,20 +25,20 @@ export default function PricingCard({
 
   return (
     <div
-      className={`rounded-2xl p-8 flex flex-col gap-6 ${
+      className={`p-8 flex flex-col gap-6 border ${
         isPremium
-          ? "bg-[#0a2f23] text-white shadow-xl ring-1 ring-[#c5a96f]/40"
-          : "bg-white text-gray-900 shadow-md border border-gray-200"
+          ? "bg-[#0a2f23] text-white border-[#c5a96f]/40"
+          : "bg-white text-[#0a2f23] border-tradual-border"
       }`}
     >
       <div>
         {isPremium && (
-          <span className="inline-block bg-[#c5a96f] text-white text-xs font-medium uppercase tracking-wider px-3 py-1 rounded-full mb-3">
+          <span className="inline-block bg-[#c5a96f] text-[#0a2f23] text-xs font-medium uppercase tracking-wider px-3 py-1 mb-3">
             Recommended
           </span>
         )}
-        <h3 className="text-2xl font-semibold" style={{ fontFamily: "var(--font-serif)" }}>{title}</h3>
-        <p className={`mt-1 text-sm ${isPremium ? "text-gray-400" : "text-gray-500"}`}>
+        <h3 className="text-2xl font-medium" style={{ fontFamily: "var(--font-serif)" }}>{title}</h3>
+        <p className={`mt-1 text-sm ${isPremium ? "text-white/60" : "text-tradual-body"}`}>
           {subtitle}
         </p>
       </div>
@@ -55,7 +55,7 @@ export default function PricingCard({
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
-            <span className={isPremium ? "text-gray-300" : "text-gray-700"}>{f.text}</span>
+            <span className={isPremium ? "text-white/80" : "text-[#0a2f23]/80"}>{f.text}</span>
           </li>
         ))}
       </ul>
@@ -63,10 +63,10 @@ export default function PricingCard({
       <div className="mt-auto">
         <a
           href={ctaHref}
-          className={`block text-center font-medium px-6 py-3 rounded-lg transition-colors tracking-wide ${
+          className={`block text-center font-medium px-6 py-3.5 transition-opacity tracking-wide hover:opacity-90 ${
             isPremium
-              ? "bg-[#c5a96f] hover:bg-[#b8975e] text-white"
-              : "bg-[#0a2f23] hover:bg-[#1a4a3a] text-white"
+              ? "bg-[#c5a96f] text-[#0a2f23]"
+              : "bg-[#0a2f23] text-white"
           }`}
         >
           {ctaLabel}

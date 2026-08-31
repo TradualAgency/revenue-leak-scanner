@@ -7,14 +7,14 @@ interface TestimonialCardProps {
 
 export default function TestimonialCard({ quote, name, role, metric }: TestimonialCardProps) {
   return (
-    <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 flex flex-col gap-5">
-      <p className="text-gray-700 text-sm leading-relaxed italic">"{quote}"</p>
-      <div className="flex items-center justify-between">
+    <div className="bg-white p-8 border border-tradual-border flex flex-col gap-5">
+      <p className="text-[#0a2f23]/80 text-sm leading-relaxed italic">"{quote}"</p>
+      <div className="flex items-center justify-between border-t border-tradual-border pt-4">
         <div>
-          <div className="text-sm font-semibold text-gray-900">{name}</div>
-          <div className="text-xs text-gray-500">{role}</div>
+          <div className="text-sm font-medium text-[#0a2f23]" style={{ fontFamily: "var(--font-serif)" }}>{name}</div>
+          <div className="text-xs text-tradual-body">{role}</div>
         </div>
-        <span className="bg-[#c5a96f]/10 text-[#c5a96f] text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap">
+        <span className="text-[#c5a96f] text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
           {metric}
         </span>
       </div>
