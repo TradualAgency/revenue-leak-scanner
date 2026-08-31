@@ -29,11 +29,16 @@ def _match_tool(html: str, sig: dict) -> bool:
     return False
 
 
-def _detect_consent_mode_v2(html: str) -> ConsentModeStatus:
+def _detect_consent_mode_v2(html: str, cmp_or_gtm_present: bool) -> ConsentModeStatus:
     if "gtag('consent'" in html or 'gtag("consent"' in html:
         if "'default'" in html or '"default"' in html:
             return "v2-correct"
         return "v2-incorrect"
+    # No inline gtag('consent'...) call in the raw HTML. If a CMP or GTM container is
+    # present, consent config plausibly lives inside GTM/the CMP backend, invisible to a
+    # static HTML scrape — that's "unknown", not "no consent management at all".
+    if cmp_or_gtm_present:
+        return "to-validate"
     return "none"
 
 
@@ -51,17 +56,17 @@ def _detect_sgtm(pages: list[dict]) -> ServerSideTagging:
 
 def _estimate_attribution_loss(
     pixels: HealthStatus | None,
-    capi: HealthStatus | None,
     consent: ConsentModeStatus | None,
     duplicate: bool,
 ) -> float:
+    # CAPI status is always "to-validate" outside-only (server-side calls aren't visible
+    # in scraped HTML), so it never contributes here — a fixed +10 for an unmeasurable
+    # signal isn't a measurement, it's a guess dressed up as one.
     loss = 0.0
     if consent in ("none", "v2-incorrect"):
         loss += 20.0
     if pixels in ("partial", "missing"):
         loss += 15.0
-    if capi in ("partial", "missing"):
-        loss += 10.0
     if duplicate:
         loss += 5.0
     return min(loss, 70.0)
@@ -98,29 +103,37 @@ async def detect_tracking(pages: list[dict]) -> TrackingDataQuality:
 
     analytics_stack = ", ".join(found_analytics + found_esp) if (found_analytics or found_esp) else None
 
-    # Pixel health: if Meta Pixel or GA4 detected → healthy, else missing
+    # Duplicate GTM detection (also used below to inform consent-mode confidence)
+    gtm_ids = set(re.findall(r"GTM-[A-Z0-9]+", all_html))
+    duplicate = len(gtm_ids) > 1
+
+    # Pixel health: if Meta Pixel or GA4 detected → healthy, else missing/unknown.
+    # On Shopify, pixels are commonly loaded through the Web Pixels Manager — a sandboxed
+    # iframe/worker that a static HTML scrape structurally cannot see into. Absence of a
+    # script-tag match there means "can't confirm", not "not installed".
+    is_shopify = any(
+        marker in all_html for marker in ("cdn.shopify.com", "Shopify.shop", "window.Shopify")
+    )
     has_ga4 = any("Google Analytics 4" in a for a in found_analytics)
     has_meta = any("Meta Pixel" in a for a in found_analytics)
     if has_ga4 and has_meta:
         pixels_health: HealthStatus = "healthy"
     elif has_ga4 or has_meta:
         pixels_health = "partial"
+    elif is_shopify:
+        pixels_health = "to-validate"
     else:
         pixels_health = "missing"
 
     # CAPI: heuristic — we can't detect server-side from outside
     capi_status: HealthStatus = "to-validate"
 
-    consent_mode = _detect_consent_mode_v2(all_html)
+    consent_mode = _detect_consent_mode_v2(all_html, cmp_or_gtm_present=bool(found_cmp or gtm_ids))
     cmp_provider = found_cmp[0] if found_cmp else None
-
-    # Duplicate GTM detection
-    gtm_ids = set(re.findall(r"GTM-[A-Z0-9]+", all_html))
-    duplicate = len(gtm_ids) > 1
 
     sgtm = _detect_sgtm(pages)
 
-    attribution_loss = _estimate_attribution_loss(pixels_health, capi_status, consent_mode, duplicate)
+    attribution_loss = _estimate_attribution_loss(pixels_health, consent_mode, duplicate)
 
     return TrackingDataQuality(
         analytics_stack=analytics_stack,

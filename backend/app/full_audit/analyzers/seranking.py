@@ -19,7 +19,7 @@ _SHARED_PLATFORMS = {"myshopify.com", "squarespace.com", "wixsite.com", "webflow
 
 def _extract_domain(url: str) -> str:
     parsed = urlparse(url if "://" in url else f"https://{url}")
-    host = (parsed.hostname or url).lower().lstrip("www.")
+    host = (parsed.hostname or url).lower().removeprefix("www.")
     for platform in _SHARED_PLATFORMS:
         if host.endswith(f".{platform}") or host == platform:
             return host

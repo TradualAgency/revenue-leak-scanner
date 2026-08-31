@@ -66,7 +66,8 @@ class LighthouseScores(BaseModel):
 class Performance(BaseModel):
     mobile: MobileCWV | None = None
     desktop_lcp_ms: float | None = None
-    lighthouse: LighthouseScores | None = None
+    lighthouse: LighthouseScores | None = None  # from the MOBILE PageSpeed run
+    desktop_lighthouse: LighthouseScores | None = None  # from the separate DESKTOP run
     tbt_ms: float | None = None
     speed_index_ms: float | None = None
     tti_ms: float | None = None

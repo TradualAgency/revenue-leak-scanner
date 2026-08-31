@@ -33,7 +33,7 @@ from app.full_audit.analyzers.seo import audit_seo
 from app.full_audit.analyzers.server_side_tracking import analyze_server_side_tracking
 from app.full_audit.analyzers.shipping import detect_shipping
 from app.full_audit.analyzers.site_search import detect_site_search
-from app.full_audit.analyzers.third_party import scan_third_party
+from app.full_audit.analyzers.third_party import apply_psi_third_party_measurements, scan_third_party
 from app.full_audit.analyzers.tracking import detect_tracking
 from app.full_audit.models import FullAudit
 from app.full_audit.schemas import (
@@ -231,8 +231,13 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 return val
 
             platform = _safe(results[0])
-            performance = _safe(results[1])
+            performance_result = _safe(results[1])
+            if performance_result is not None:
+                performance, psi_third_party_summary = performance_result
+            else:
+                performance, psi_third_party_summary = None, {}
             third_party = _safe(results[2])
+            third_party = apply_psi_third_party_measurements(third_party, psi_third_party_summary)
             tracking = _safe(results[3])
             checkout = _safe(results[4])
             owned = _safe(results[5])

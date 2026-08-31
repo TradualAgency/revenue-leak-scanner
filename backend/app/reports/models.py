@@ -20,6 +20,7 @@ class Report(Base):
     estimated_monthly_loss: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     total_plugin_cost_monthly: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
     report_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

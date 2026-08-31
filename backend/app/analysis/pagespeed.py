@@ -60,19 +60,13 @@ async def measure_pages(store_url: str, scraped_pages: list[dict]) -> dict:
     """
     Measure performance for key pages (homepage, first collection, first product).
 
-    Falls back to aiohttp response times if no API key is configured.
+    Requires PAGESPEED_API_KEY. The scraper's own fetch time is TTFB (time to first
+    byte), not a browser page load — scaling it by a guessed multiplier presented a
+    fabricated number as a measurement. Without PSI, or if every PSI call fails, page
+    load time is genuinely unmeasured: avg_load_time_ms comes back None rather than a guess.
     """
     if not settings.PAGESPEED_API_KEY:
-        # Fallback: aiohttp measures TTFB only; multiply by ~8 to estimate full browser
-        # page load time (TTFB is typically ~10-12% of total load time for e-commerce stores).
-        load_times = [p["load_time_ms"] for p in scraped_pages if p.get("load_time_ms", 0) > 0]
-        raw_avg = int(sum(load_times) / len(load_times)) if load_times else 1000
-        estimated_ms = max(1500, min(raw_avg * 8, 12000))
-        return {
-            "performance_score": None,
-            "avg_load_time_ms": estimated_ms,
-            "source": "aiohttp_fallback",
-        }
+        return {"performance_score": None, "avg_load_time_ms": None, "source": "not_measured"}
 
     # Select up to 3 key pages: homepage, a /collections/ page, a /products/ page
     key_urls = [store_url]
@@ -93,14 +87,8 @@ async def measure_pages(store_url: str, scraped_pages: list[dict]) -> dict:
             load_times.append(result["load_time_ms"])
 
     if not scores:
-        # Fallback if API calls all failed
-        raw_times = [p["load_time_ms"] for p in scraped_pages if p.get("load_time_ms", 0) > 0]
-        avg_ms = int(sum(raw_times) / len(raw_times)) if raw_times else 3000
-        return {
-            "performance_score": None,
-            "avg_load_time_ms": avg_ms,
-            "source": "aiohttp_fallback",
-        }
+        # All PSI calls failed — same "genuinely unmeasured" case as no API key.
+        return {"performance_score": None, "avg_load_time_ms": None, "source": "not_measured"}
 
     return {
         "performance_score": int(sum(scores) / len(scores)),

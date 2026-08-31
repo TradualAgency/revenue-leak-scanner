@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from app.full_audit.analyzers.benchmarks import (
+    BENCHMARK_CR,
+    DEFAULT_ANNUAL_REVENUE_EUR,
+    aov_for_monthly_revenue,
+)
 from app.full_audit.schemas import (
     AdTrafficImpact,
     Performance,
@@ -10,16 +15,14 @@ from app.full_audit.schemas import (
 )
 
 _BASELINE_BOUNCE_PCT = 45.0
-_BENCHMARK_CVR = 0.02
-_DEFAULT_ANNUAL_REVENUE = 108_000.0
 
 
 def _ad_benchmarks(
     annual_revenue_eur: float | None,
     traffic: SeRankingTraffic | None = None,
 ) -> dict:
-    monthly = (annual_revenue_eur or _DEFAULT_ANNUAL_REVENUE) / 12
-    aov = 75.0 if monthly < 50_000 else 95.0 if monthly < 250_000 else 120.0
+    monthly = (annual_revenue_eur or DEFAULT_ANNUAL_REVENUE_EUR) / 12
+    aov = aov_for_monthly_revenue(monthly)
 
     if traffic is not None:
         paid = float(traffic.monthly_paid_sessions)
@@ -28,7 +31,7 @@ def _ad_benchmarks(
         ad_sessions_high = paid
         data_source = "measured"
     else:
-        sessions = monthly / (aov * 0.03)
+        sessions = monthly / (aov * BENCHMARK_CR)
         ad_sessions_low = sessions * 0.50
         ad_sessions_high = sessions * 1.00
         data_source = "heuristic"
@@ -100,8 +103,8 @@ def calculate_ad_traffic_impact(
     delta = max(0.0, bounce_pct - _BASELINE_BOUNCE_PCT)
     drop_off = round(delta / 100 * 1000) if delta > 0 else 0
 
-    lost_low = round(bench["ad_sessions_low"] * (delta / 100) * _BENCHMARK_CVR * bench["aov"])
-    lost_high = round(bench["ad_sessions_high"] * (delta / 100) * _BENCHMARK_CVR * bench["aov"])
+    lost_low = round(bench["ad_sessions_low"] * (delta / 100) * BENCHMARK_CR * bench["aov"])
+    lost_high = round(bench["ad_sessions_high"] * (delta / 100) * BENCHMARK_CR * bench["aov"])
 
     wasted_pct = tracking.est_attribution_loss_percent if tracking else None
 
@@ -124,7 +127,7 @@ def calculate_ad_traffic_impact(
         bounce_drivers=drivers,
         methodology_note=(
             f"{'Gemeten' if is_measured else 'Heuristische'} schatting op basis van Google CrUX-correlaties (LCP/INP \u2192 bounce-rate). "
-            f"{sessions_note} {_BENCHMARK_CVR * 100:.0f}% CVR, \u20ac{bench['aov']:.0f} AOV. "
+            f"{sessions_note} {BENCHMARK_CR * 100:.0f}% CVR, \u20ac{bench['aov']:.0f} AOV. "
             "Gebruik als indicatie, niet als gemeten benchmark."
         ),
         data_source="measured" if is_measured else "heuristic",

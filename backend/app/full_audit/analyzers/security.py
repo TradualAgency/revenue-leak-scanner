@@ -108,15 +108,23 @@ async def check_security(store_url: str, pages: list[dict]) -> SecurityComplianc
     banner_behavior = _detect_cookie_banner(homepage_html)
     gdpr = _gdpr_concerns(homepage_html, banner_behavior is not None)
 
-    # PCI heuristic: if checkout is handled by known PSP, likely compliant
+    # PCI heuristic: if checkout is handled by a known PSP, likely compliant.
+    # `pages` is the generic crawl (homepage + internal links) — it almost never
+    # includes the actual checkout page (redirects, separate domain), so absence of a
+    # PSP marker here usually means "checkout wasn't scraped", not "checkout is risky".
+    # Only downgrade to "concerns" when a checkout-like page was actually seen and still
+    # showed no PSP signal; otherwise there isn't enough evidence to say either way.
     all_html = " ".join(p.get("html", "") for p in pages)
-    pci: PciStatus = "likely"
-    for psp in _KNOWN_PSP_REDIRECT_INDICATORS:
-        if psp in all_html:
-            pci = "likely"
-            break
-    else:
+    checkout_page_scraped = any("checkout" in p.get("url", "").lower() for p in pages)
+    psp_detected = any(psp in all_html for psp in _KNOWN_PSP_REDIRECT_INDICATORS)
+
+    pci: PciStatus
+    if psp_detected:
+        pci = "likely"
+    elif checkout_page_scraped:
         pci = "concerns"
+    else:
+        pci = "n-a"
 
     return SecurityCompliance(
         ssl_status=ssl_status,

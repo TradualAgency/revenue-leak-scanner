@@ -39,6 +39,7 @@ class ReportSummaryResponse(BaseModel):
     avg_load_time_ms: int | None
     excess_load_time: float | None
     blended_loss_rate: float | None
+    speed_source: str | None
     pages_scanned: list[str] | None
     plugins: list[DetectedPluginOut] | None
     quick_wins: list[str] | None
@@ -57,6 +58,7 @@ class ReportFullResponse(BaseModel):
     total_plugin_cost_monthly: Decimal | None
     plugins: list[DetectedPluginOut]
     report_data: dict | None
+    error_message: str | None = None
     created_at: datetime
     completed_at: datetime | None
 

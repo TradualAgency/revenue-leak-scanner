@@ -30,6 +30,8 @@ async def run_analysis(
             # 1. Scrape
             scrape_result = await scrape_store(store_url)
             pages = scrape_result["pages"]
+            if not pages:
+                raise RuntimeError(f"Could not scrape {store_url} — site unreachable or blocked")
 
             # 2. Detect plugins — aggregate across all pages
             all_plugins: dict[str, dict] = {}
@@ -46,9 +48,16 @@ async def run_analysis(
             avg_load_time_ms = speed["avg_load_time_ms"]
             performance_score = speed.get("performance_score")
 
-            # 4. Revenue loss
-            avg_load_time_seconds = avg_load_time_ms / 1000
-            revenue_result = calculate_revenue_loss(monthly_revenue, avg_load_time_seconds)
+            # 4. Revenue loss — only computable with a real load-time measurement
+            if avg_load_time_ms is not None:
+                avg_load_time_seconds = avg_load_time_ms / 1000
+                revenue_result = calculate_revenue_loss(monthly_revenue, avg_load_time_seconds)
+            else:
+                revenue_result = {
+                    "blended_loss_rate": None,
+                    "estimated_monthly_loss": None,
+                    "excess_load_time": None,
+                }
 
             # 5. Plugin costs
             total_plugin_cost = sum(
@@ -75,7 +84,10 @@ async def run_analysis(
                 "speed_source": speed.get("source"),
                 "blended_loss_rate": revenue_result["blended_loss_rate"],
                 "excess_load_time": revenue_result["excess_load_time"],
-                "estimated_monthly_loss": float(revenue_result["estimated_monthly_loss"]),
+                "estimated_monthly_loss": (
+                    float(revenue_result["estimated_monthly_loss"])
+                    if revenue_result["estimated_monthly_loss"] is not None else None
+                ),
                 "total_plugin_cost_monthly": float(total_plugin_cost),
                 "plugins": detected,
             }
@@ -98,7 +110,20 @@ async def run_analysis(
 
         except Exception as exc:
             logger.exception("Analysis failed for report %s: %s", report_id, exc)
-            await _set_status(db, report_id, "failed")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            try:
+                async with AsyncSessionLocal() as db2:
+                    result2 = await db2.execute(select(Report).where(Report.id == report_id))
+                    row = result2.scalar_one_or_none()
+                    if row:
+                        row.status = "failed"
+                        row.error_message = str(exc)[:2000]
+                        await db2.commit()
+            except Exception:
+                pass
 
 
 async def _set_status(db: AsyncSession, report_id: uuid.UUID, status: str) -> None:

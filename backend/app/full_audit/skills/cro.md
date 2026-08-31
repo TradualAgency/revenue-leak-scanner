@@ -61,6 +61,7 @@ Analyseer in volgorde van impact:
 - `guest_checkout_available: null` → checkout is niet geprobed, géén observatie over gastenafrekenen schrijven
 - `guest_checkout_available: false` → bevestigd afwezig, wél een observatie schrijven
 - `pixels_health: null` → onbekend, géén observatie
+- `pixels_health: "to-validate"` → net als `null` behandelen: veel Shopify-stores laden pixels via een sandboxed Web Pixels-manager die van buitenaf niet te inspecteren is — dit betekent "niet te bevestigen", niet "afwezig". Géén observatie.
 - `pixels_health: "missing"` → bevestigd afwezig, wél een observatie
 
 Wanneer je twijfelt of iets ontbreekt maar de data het niet bevestigt: sla de observatie over.

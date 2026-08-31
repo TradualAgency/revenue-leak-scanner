@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { getFullAudit, getFullAuditStatus } from "~/lib/api";
+import { getFullAudit, getFullAuditSanityExport, getFullAuditStatus } from "~/lib/api";
 import type {
   AccessibilityHealth,
   AdTrafficImpact,
@@ -191,18 +191,39 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
         </div>
       )}
       {data.lighthouse && (
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {(["performance", "accessibility", "best_practices", "seo"] as const).map((key) => {
-            const val = data.lighthouse![key];
-            return (
-              <div key={key} className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
-                <div className={`text-lg font-semibold ${val != null && val < 50 ? "text-red-500" : val != null && val < 90 ? "text-yellow-600" : "text-emerald-600"}`}>
-                  {val ?? "—"}
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Mobiel</p>
+          <div className="grid grid-cols-4 gap-2">
+            {(["performance", "accessibility", "best_practices", "seo"] as const).map((key) => {
+              const val = data.lighthouse![key];
+              return (
+                <div key={key} className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                  <div className={`text-lg font-semibold ${val != null && val < 50 ? "text-red-500" : val != null && val < 90 ? "text-yellow-600" : "text-emerald-600"}`}>
+                    {val ?? "—"}
+                  </div>
+                  <div className="text-xs text-gray-400 capitalize">{key.replace("_", " ")}</div>
                 </div>
-                <div className="text-xs text-gray-400 capitalize">{key.replace("_", " ")}</div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {data.desktop_lighthouse && (
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Desktop</p>
+          <div className="grid grid-cols-4 gap-2">
+            {(["performance", "accessibility", "best_practices", "seo"] as const).map((key) => {
+              const val = data.desktop_lighthouse![key];
+              return (
+                <div key={key} className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                  <div className={`text-lg font-semibold ${val != null && val < 50 ? "text-red-500" : val != null && val < 90 ? "text-yellow-600" : "text-emerald-600"}`}>
+                    {val ?? "—"}
+                  </div>
+                  <div className="text-xs text-gray-400 capitalize">{key.replace("_", " ")}</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {data.render_blocking_resources.length > 0 && (
@@ -857,17 +878,13 @@ function RevenueLeakSection({ data }: { data: RevenueLeakReport }) {
         <div className="mb-6 pb-5 border-b border-white/10">
           {showSplit ? (
             <div className="flex flex-col gap-1.5 mb-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs text-white/40">Directe lek (Laag 1+2+3)</span>
-                <span className="text-base font-semibold text-orange-400">€{(direct || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs text-white/40">Efficiëntie-uplift (Laag 4)</span>
-                <span className="text-base font-semibold text-yellow-400">€{(efficiency || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+              <div className="flex items-baseline justify-between pb-1">
+                <span className="text-xs font-semibold text-white/60">Directe lek nu (Laag 1+2+3)</span>
+                <span className="text-xl font-bold text-red-400">€{(direct || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
               </div>
               <div className="flex items-baseline justify-between pt-2 border-t border-white/10 mt-1">
-                <span className="text-xs font-semibold text-white/60">Totale revenue leak</span>
-                <span className="text-xl font-bold text-red-400">€{total.toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+                <span className="text-xs text-white/40">+ extra potentieel bij snellere winkel (Laag 4 — géén huidig verlies)</span>
+                <span className="text-base font-semibold text-yellow-400">€{(efficiency || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
               </div>
             </div>
           ) : (
@@ -1423,6 +1440,7 @@ export default function FullAuditResults() {
   const { auditId } = useParams<{ auditId: string }>();
   const [statusData, setStatusData] = useState<FullAuditStatusResponse | null>(null);
   const [auditData, setAuditData] = useState<FullAuditData | null>(null);
+  const [sanityExport, setSanityExport] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msgIndex, setMsgIndex] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1450,6 +1468,7 @@ export default function FullAuditResults() {
           if (intervalRef.current) clearInterval(intervalRef.current);
           const full = await getFullAudit(auditId!);
           setAuditData(full.data);
+          getFullAuditSanityExport(auditId!).then(setSanityExport);
         } else if (s.status === "failed") {
           if (intervalRef.current) clearInterval(intervalRef.current);
         }
@@ -1635,7 +1654,7 @@ export default function FullAuditResults() {
               {auditData.cro_observations.length > 0 && <CroSection items={auditData.cro_observations} />}
               {(auditData.bloat_what_must_go.length > 0 || auditData.ai_analysis?.bloat) && <BloatSection items={auditData.bloat_what_must_go} aiInsight={auditData.ai_analysis?.bloat} />}
               {auditData.ai_analysis && (auditData.ai_analysis.cro || auditData.ai_analysis.deliverability || auditData.ai_analysis.tech_architecture || auditData.ai_analysis.ad_bounce_revenue) && <AiAnalysisSection data={auditData.ai_analysis} />}
-              {auditData.sanity_export && <SanityExportSection data={auditData.sanity_export} />}
+              {sanityExport && <SanityExportSection data={sanityExport} />}
 
               {auditData.methodology_note && (
                 <p className="text-xs text-gray-400 italic text-center px-4">{auditData.methodology_note}</p>

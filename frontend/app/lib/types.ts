@@ -34,6 +34,7 @@ export interface ReportSummaryResponse {
   avg_load_time_ms: number | null;
   excess_load_time: number | null;
   blended_loss_rate: number | null;
+  speed_source: string | null;
   pages_scanned: string[] | null;
   plugins: DetectedPlugin[] | null;
   quick_wins: string[] | null;
@@ -384,6 +385,12 @@ export interface FullAuditData {
     } | null;
     desktop_lcp_ms: number | null;
     lighthouse: {
+      performance: number | null;
+      accessibility: number | null;
+      best_practices: number | null;
+      seo: number | null;
+    } | null;
+    desktop_lighthouse: {
       performance: number | null;
       accessibility: number | null;
       best_practices: number | null;

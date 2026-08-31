@@ -62,6 +62,7 @@ async def get_report_summary(
     rd = report.report_data or {}
     blended_loss_rate: float | None = rd.get("blended_loss_rate")
     excess_load_time: float | None = rd.get("excess_load_time")
+    speed_source: str | None = rd.get("speed_source")
     pages_scanned: list[str] | None = rd.get("pages_scraped")
 
     plugins_list: list[DetectedPluginOut] | None = None
@@ -114,6 +115,7 @@ async def get_report_summary(
         avg_load_time_ms=report.avg_load_time_ms,
         excess_load_time=excess_load_time,
         blended_loss_rate=blended_loss_rate,
+        speed_source=speed_source,
         pages_scanned=pages_scanned,
         plugins=plugins_list,
         quick_wins=quick_wins if quick_wins else None,
@@ -134,7 +136,7 @@ async def get_full_report(
     if not lead or lead.email.lower() != email.lower():
         raise HTTPException(status_code=403, detail="Email does not match this report")
 
-    if report.status != "completed":
+    if report.status not in ("completed", "failed"):
         raise HTTPException(status_code=202, detail=f"Report is {report.status}")
 
     plugins_result = await db.execute(
@@ -163,6 +165,7 @@ async def get_full_report(
             for p in plugins
         ],
         report_data=report.report_data,
+        error_message=report.error_message,
         created_at=report.created_at,
         completed_at=report.completed_at,
     )

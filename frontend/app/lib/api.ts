@@ -12,11 +12,14 @@ import type {
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 const BASE = `${API_URL}/api/v1`;
+// Only ever used by the operator-facing full-audit review page — never sent from the
+// prospect-facing revenue-leak report.
+const OPERATOR_API_KEY = import.meta.env.VITE_OPERATOR_API_KEY || "";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { "Content-Type": "application/json", ...(options?.headers as Record<string, string> | undefined) },
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -57,4 +60,15 @@ export function getFullAuditStatus(auditId: string): Promise<FullAuditStatusResp
 
 export function getFullAudit(auditId: string): Promise<FullAuditResponse> {
   return request<FullAuditResponse>(`/full-audit/${auditId}`);
+}
+
+// Operator-only: the Sanity CMS export (contains a page password) is deliberately not
+// included in getFullAudit's response. Requires VITE_OPERATOR_API_KEY to be configured;
+// resolves to null if it isn't, so callers can treat this as "unavailable" rather than
+// erroring the whole page.
+export function getFullAuditSanityExport(auditId: string): Promise<Record<string, unknown> | null> {
+  if (!OPERATOR_API_KEY) return Promise.resolve(null);
+  return request<Record<string, unknown>>(`/full-audit/${auditId}/sanity-export`, {
+    headers: { "X-Operator-Key": OPERATOR_API_KEY },
+  }).catch(() => null);
 }

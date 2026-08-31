@@ -22,7 +22,13 @@ def _catalog_by_domain() -> dict[str, dict]:
 
 
 def _extract_external_domains(html: str, base_domain: str) -> dict[str, list[str]]:
-    """Return {domain: [src_urls...]} for third-party resources."""
+    """Return {domain: [src_urls...]} for third-party resources.
+
+    Deliberately excludes <img> — this feed drives "N apps/scripts running on your
+    store" language and per-domain weight/blocking-time figures. Image hosts (font
+    CDNs, payment-method badges, YouTube thumbnails, generic image CDNs) inflate the
+    domain count without being an app or a script; they're not part of that story.
+    """
     soup = BeautifulSoup(html, "lxml")
     domains: dict[str, list[str]] = {}
 
@@ -30,7 +36,6 @@ def _extract_external_domains(html: str, base_domain: str) -> dict[str, list[str
         ("script", "src"),
         ("link", "href"),
         ("iframe", "src"),
-        ("img", "src"),
     ]
     for tag_name, attr in selectors:
         for tag in soup.find_all(tag_name, **{attr: True}):
@@ -43,24 +48,11 @@ def _extract_external_domains(html: str, base_domain: str) -> dict[str, list[str
                 if not domain or domain == base_domain:
                     continue
                 # Strip www. for grouping
-                clean_domain = domain.lstrip("www.")
+                clean_domain = domain.removeprefix("www.")
                 domains.setdefault(clean_domain, []).append(url)
             except Exception:
                 continue
     return domains
-
-
-def _is_blocking(html: str, src_url: str) -> bool:
-    """Heuristic: script is blocking if in <head> without async/defer."""
-    soup = BeautifulSoup(html, "lxml")
-    head = soup.find("head")
-    if not head:
-        return False
-    for tag in head.find_all("script", src=True):
-        tag_src = str(tag.get("src", ""))
-        if src_url in tag_src:
-            return not (tag.get("async") is not None or tag.get("defer") is not None)
-    return False
 
 
 def _dangerous_patterns(pages: list[dict], detected: list[DetectedScript]) -> list[str]:
@@ -95,7 +87,7 @@ async def scan_third_party(pages: list[dict]) -> ThirdPartyScripts:
     catalog = _catalog_by_domain()
     homepage = pages[0]
     base_url = homepage.get("url", "")
-    base_domain = urlparse(base_url).netloc.lstrip("www.")
+    base_domain = urlparse(base_url).netloc.removeprefix("www.")
 
     all_domains: dict[str, list[str]] = {}
     for page in pages:
@@ -108,10 +100,8 @@ async def scan_third_party(pages: list[dict]) -> ThirdPartyScripts:
                     existing.append(u)
 
     detected_scripts: list[DetectedScript] = []
-    total_kb = 0.0
-    total_blocking_ms = 0.0
 
-    for domain, urls in all_domains.items():
+    for domain in all_domains:
         # Match against catalog (substring match on domain)
         entry = None
         for cat_domain, cat_entry in catalog.items():
@@ -122,7 +112,6 @@ async def scan_third_party(pages: list[dict]) -> ThirdPartyScripts:
         if entry:
             necessity: Necessity = entry["default_necessity"]
             monthly_cost = float(entry["est_monthly_cost_eur"])
-            size_kb = 50.0 if monthly_cost > 0 else 15.0
             purpose = entry["purpose"]
             name = entry["name"]
             replaceable_by = entry.get("replaceable_by")
@@ -130,43 +119,93 @@ async def scan_third_party(pages: list[dict]) -> ThirdPartyScripts:
         else:
             necessity = "useful"
             monthly_cost = 0.0
-            size_kb = 20.0
             purpose = "Unknown third-party resource"
             name = domain
             recommendation = None
 
-        # Blocking time heuristic
-        blocking = False
-        for page in pages:
-            for src_url in urls:
-                if _is_blocking(page.get("html", ""), src_url):
-                    blocking = True
-                    break
-        blocking_ms = size_kb * 0.8 if blocking else 0.0
-
-        total_kb += size_kb
-        total_blocking_ms += blocking_ms
-
+        # Weight and blocking time are NOT set here — they used to be flat constants
+        # (50/15/20 KB, blocking = size * 0.8) standing in for a measurement. They're
+        # filled in by `apply_psi_third_party_measurements()` from PageSpeed Insights'
+        # own third-party-summary audit, which actually measured the page load. A
+        # domain PSI didn't observe stays unmeasured (None) rather than guessed.
         detected_scripts.append(DetectedScript(
             name=name,
             domain=domain,
             purpose=purpose,
-            size_kb=round(size_kb, 1),
-            blocking_time_ms=round(blocking_ms, 1) if blocking_ms else None,
+            size_kb=None,
+            blocking_time_ms=None,
             necessity=necessity,
             monthly_cost_eur=monthly_cost if monthly_cost > 0 else None,
             recommendation=recommendation,
         ))
 
-    # Sort: blocking first, then by size
-    detected_scripts.sort(key=lambda s: (-(s.blocking_time_ms or 0), -(s.size_kb or 0)))
+    # No weight/blocking measurement yet to sort by — order by cost (the one real
+    # number available at this stage) so paid tools surface first, then name.
+    detected_scripts.sort(key=lambda s: (-(s.monthly_cost_eur or 0), s.name.lower()))
 
     dangerous = _dangerous_patterns(pages, detected_scripts)
 
     return ThirdPartyScripts(
         total_third_party_domains=len(all_domains),
-        total_third_party_kb=round(total_kb, 1),
-        total_third_party_blocking_ms=round(total_blocking_ms, 1),
+        total_third_party_kb=None,
+        total_third_party_blocking_ms=None,
         detected_scripts=detected_scripts,
         dangerous_patterns=dangerous,
     )
+
+
+def apply_psi_third_party_measurements(
+    third_party: ThirdPartyScripts | None,
+    psi_summary: dict[str, dict],
+) -> ThirdPartyScripts | None:
+    """Overlay PageSpeed Insights' third-party-summary measurements (real transfer size
+    + blocking time, attributed by Lighthouse's own entity classification) onto the
+    HTML-detected script list from `scan_third_party`.
+
+    PSI groups by "entity" (a business, e.g. "Google"), not literal hostname, so matching
+    is substring-based in both directions — the same approach already used for the local
+    third-party catalog. Domains PSI didn't observe on the page it measured stay
+    unmeasured (None); we no longer fabricate a number to fill the gap.
+    """
+    if third_party is None:
+        return None
+    if not psi_summary:
+        # No PSI data at all (no API key, or the call failed) — nothing to overlay.
+        return third_party
+
+    updated_scripts: list[DetectedScript] = []
+    total_kb = 0.0
+    total_blocking_ms = 0.0
+    any_matched = False
+
+    for script in third_party.detected_scripts:
+        domain = (script.domain or "").lower()
+        match = None
+        for psi_key, data in psi_summary.items():
+            if psi_key and (psi_key in domain or domain in psi_key):
+                match = data
+                break
+        if match:
+            any_matched = True
+            size_kb = match["transfer_size_kb"]
+            blocking_ms = match["blocking_ms"]
+            total_kb += size_kb
+            total_blocking_ms += blocking_ms
+            updated_scripts.append(script.model_copy(update={
+                "size_kb": size_kb,
+                "blocking_time_ms": blocking_ms if blocking_ms > 0 else None,
+            }))
+        else:
+            updated_scripts.append(script)
+
+    if not any_matched:
+        return third_party.model_copy(update={"detected_scripts": updated_scripts})
+
+    # Now that real weight/blocking numbers exist, surface the heaviest offenders first.
+    updated_scripts.sort(key=lambda s: (-(s.blocking_time_ms or 0), -(s.size_kb or 0)))
+
+    return third_party.model_copy(update={
+        "detected_scripts": updated_scripts,
+        "total_third_party_kb": round(total_kb, 1),
+        "total_third_party_blocking_ms": round(total_blocking_ms, 1),
+    })

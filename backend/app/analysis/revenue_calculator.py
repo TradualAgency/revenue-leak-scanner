@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-BENCHMARK_LOAD_TIME = 0.5  # seconds — "ideal" load time; any time above this costs conversions
+BENCHMARK_LOAD_TIME = 2.5  # seconds — Google's own "good" Core Web Vitals LCP threshold;
+# 0.5s was unreachable for any real e-commerce store, which made `excess` — and every
+# loss figure downstream of it — non-zero and inflated by construction for every store.
 LOSS_PER_SECOND = 0.07
 MOBILE_SHARE = 0.65
 MOBILE_PENALTY = 1.2

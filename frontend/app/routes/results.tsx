@@ -313,7 +313,7 @@ export default function Results() {
                   </div>
                   {summary.avg_load_time_ms != null && (
                     <p className="mt-5 text-sm text-gray-500 border-t border-gray-100 pt-4">
-                      Every second above 0.5s costs ~7% in conversions. Your store loads in{" "}
+                      Every second above 2.5s (Google's "good" loading threshold) costs conversions. Your store loads in{" "}
                       <span className="font-semibold text-gray-700">
                         {(summary.avg_load_time_ms / 1000).toFixed(1)}s
                       </span>

@@ -1,9 +1,11 @@
+import hmac
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dependencies import get_db
 from app.full_audit.models import FullAudit
 from app.full_audit.schemas import (
@@ -16,6 +18,11 @@ from app.full_audit.schemas import (
 from app.full_audit.service import run_full_audit
 
 router = APIRouter(prefix="/api/v1/full-audit", tags=["full-audit"])
+
+
+def _require_operator_key(x_operator_key: str = Header(default="")) -> None:
+    if not settings.OPERATOR_API_KEY or not hmac.compare_digest(x_operator_key, settings.OPERATOR_API_KEY):
+        raise HTTPException(status_code=403, detail="Not authorized")
 
 
 @router.post("", response_model=FullAuditCreateResponse, status_code=201)
@@ -80,6 +87,12 @@ async def get_full_audit(
     data: FullAuditData | None = None
     if audit.audit_data and audit.status == "ready_for_review":
         data = FullAuditData.model_validate(audit.audit_data)
+        # The Sanity export embeds a page password for the operator-only CMS import
+        # flow — it must never ride along on this endpoint, which is reachable by
+        # anyone holding the audit link (the same shareable-link model used for the
+        # prospect-facing revenue-leak report). Fetch it via the dedicated,
+        # operator-key-gated endpoint below instead.
+        data.sanity_export = None
 
     return FullAuditResponse(
         id=audit.id,
@@ -92,3 +105,19 @@ async def get_full_audit(
         data=data,
         error_message=audit.error_message,
     )
+
+
+@router.get("/{audit_id}/sanity-export", dependencies=[Depends(_require_operator_key)])
+async def get_full_audit_sanity_export(
+    audit_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))
+    audit = result.scalar_one_or_none()
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+
+    sanity_export = (audit.audit_data or {}).get("sanity_export") if audit.status == "ready_for_review" else None
+    if sanity_export is None:
+        raise HTTPException(status_code=404, detail="Sanity export not available")
+    return sanity_export

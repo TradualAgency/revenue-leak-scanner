@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from app.full_audit.analyzers.benchmarks import (
+    AD_SPEND_SHARE_OF_REVENUE,
+    BENCHMARK_CR,
+    DEFAULT_ANNUAL_REVENUE_EUR,
+    aov_for_monthly_revenue,
+)
 from app.full_audit.schemas import (
     AccessibilityHealth,
     AdTrafficImpact,
@@ -20,7 +26,6 @@ from app.full_audit.schemas import (
     TrackingDataQuality,
 )
 
-_DEFAULT_ANNUAL_REVENUE = 108_000.0  # = €9k/mnd legacy benchmark
 _STACK_REBUILD_COST = 35_000.0
 
 
@@ -28,17 +33,17 @@ def _benchmarks(
     annual_revenue_eur: float | None,
     traffic: SeRankingTraffic | None = None,
 ) -> dict:
-    monthly = (annual_revenue_eur or _DEFAULT_ANNUAL_REVENUE) / 12
-    aov = 75.0 if monthly < 50_000 else 95.0 if monthly < 250_000 else 120.0
-    ad_spend = monthly * 0.15
+    monthly = (annual_revenue_eur or DEFAULT_ANNUAL_REVENUE_EUR) / 12
+    aov = aov_for_monthly_revenue(monthly)
+    ad_spend = monthly * AD_SPEND_SHARE_OF_REVENUE
 
     if traffic is not None:
         sessions = float(traffic.monthly_organic_sessions + traffic.monthly_paid_sessions)
         # Compute actual conversion rate from real sessions; clamp to plausible range.
-        cr = max(0.005, min(0.25, monthly / (sessions * aov))) if sessions > 0 else 0.03
+        cr = max(0.005, min(0.25, monthly / (sessions * aov))) if sessions > 0 else BENCHMARK_CR
         data_source = "measured"
     else:
-        cr = 0.03
+        cr = BENCHMARK_CR
         sessions = monthly / (aov * cr)
         data_source = "heuristic"
 
@@ -199,28 +204,31 @@ def _layer2_motor(
     metrics: list[RevenueLeakMetric] = []
     s = bench["scale"]
 
-    # — App-impact —
+    # — Third-party embed count —
+    # `total_third_party_domains` counts distinct domains behind script/link/iframe tags
+    # (trackers, chat widgets, review embeds, fonts, GTM, ...). It is NOT an app count —
+    # a domain isn't necessarily a Shopify app, and one app can span several domains.
     domains = (third_party.total_third_party_domains or 0) if third_party else 0
     domains_measured = third_party is not None
     if domains_measured and domains > 10:
         app_loss = _r(min(bench["monthly_revenue"] * 0.05, (domains - 10) * 50 * s))
-        signal = f"{domains} apps draaien mee bij elke pagina (gezond is <10) — ze remmen de winkel af"
+        signal = f"{domains} externe diensten laden mee bij elke pagina (gezond is <10) — ze remmen de winkel af"
         app_status: MetricStatus = "critical" if domains > 20 else "warning"
     elif domains_measured:
         app_loss = 0.0
-        signal = f"{domains} apps actief — binnen gezonde grens"
+        signal = f"{domains} externe diensten actief — binnen gezonde grens"
         app_status = "good"
     else:
         app_loss = 0.0
         signal = None
         app_status = "not-measured"
     metrics.append(RevenueLeakMetric(
-        metric="Hoeveel apps vertragen je winkel?",
-        what_we_measure="Of de Shopify-apps die je betaalt je winkel niet meer kosten in omzet dan ze opleveren",
+        metric="Hoeveel externe diensten vertragen je winkel?",
+        what_we_measure="Aantal losse trackers, widgets en embeds dat op elke pagina meeladt — los van of het via een Shopify-app draait",
         priority="high",
         monthly_loss_eur=app_loss,
         annual_loss_eur=app_loss * 12,
-        calculation_note="Extra apps boven gezonde grens → trager → minder verkopen → omzetverlies",
+        calculation_note="Extra externe diensten boven gezonde grens → trager → minder verkopen → omzetverlies",
         signal=signal,
         status=app_status,
     ))
@@ -392,14 +400,11 @@ def _layer3_lekkage(
     ))
 
     # — Mobile Performance Gap —
-    mob_score = None
-    desk_score = None
-    if performance and performance.lighthouse:
-        desk_score = performance.lighthouse.performance
-    if performance and performance.mobile:
-        mob_lcp = performance.mobile.lcp_ms
-        if mob_lcp is not None and desk_score is not None:
-            mob_score = max(0, int(desk_score - (mob_lcp - 2500) / 100 * 2)) if mob_lcp > 2500 else desk_score
+    # `performance.lighthouse` is the score from the MOBILE PageSpeed run;
+    # `performance.desktop_lighthouse` is a separate, independent DESKTOP run — two real
+    # measurements, not one score with the other derived from it.
+    mob_score = performance.lighthouse.performance if (performance and performance.lighthouse) else None
+    desk_score = performance.desktop_lighthouse.performance if (performance and performance.desktop_lighthouse) else None
     gap = (desk_score - mob_score) if (desk_score is not None and mob_score is not None) else 0
     if gap > 20:
         mobile_loss = _r(min(bench["monthly_revenue"] * 0.10, gap * 60 * s))
@@ -719,10 +724,11 @@ def _detect_ceo_triggers(
     product_feeds: ProductFeedHealth | None,
 ) -> list[CeoTriggerKpi]:
     perf_score = performance.lighthouse.performance if (performance and performance.lighthouse) else None
-    mob_lcp = performance.mobile.lcp_ms if (performance and performance.mobile) else None
-    desk_score = perf_score
-    mob_score_est = max(0, int(desk_score - (mob_lcp - 2500) / 100 * 2)) if (mob_lcp and mob_lcp > 2500 and desk_score) else desk_score
-    mob_gap = (desk_score - mob_score_est) if (desk_score and mob_score_est) else 0
+    # `performance.lighthouse` is the MOBILE run; `performance.desktop_lighthouse` is the
+    # separate DESKTOP run — two independent measurements, not one derived from the other.
+    mob_score = perf_score
+    desk_score = performance.desktop_lighthouse.performance if (performance and performance.desktop_lighthouse) else None
+    mob_gap = (desk_score - mob_score) if (desk_score is not None and mob_score is not None) else 0
 
     triggers = [
         CeoTriggerKpi(
@@ -793,12 +799,12 @@ def _detect_ceo_triggers(
         ),
         CeoTriggerKpi(
             category="Kosten & Efficiëntie",
-            kpi="Shopify app-kosten stijgen maar resultaat niet",
-            what_ceo_sees="Elke maand meer apps, meer subscriptions, maar geen meetbaar effect op omzet.",
+            kpi="Externe diensten stapelen zich op zonder meetbaar resultaat",
+            what_ceo_sees="Elke maand meer tools, meer subscriptions, maar geen meetbaar effect op omzet.",
             benchmark=None,
-            alarm_signal=">15 apps geïnstalleerd",
-            real_meaning="Elke app voegt gewicht toe aan de store. Je betaalt dubbel: de subscription + het conversieverlies dat de app veroorzaakt.",
-            tradual_pitch="Jullie betalen per maand aan apps die jullie store vertragen. Sommige kosten meer aan conversieverlies dan ze opleveren aan functionaliteit.",
+            alarm_signal=">15 externe diensten laden mee op elke pagina",
+            real_meaning="Elke externe dienst voegt gewicht toe aan de store. Je betaalt mogelijk dubbel: de subscription + het conversieverlies dat de dienst veroorzaakt.",
+            tradual_pitch="Jullie betalen per maand aan tools die jullie store vertragen. Sommige kosten meer aan conversieverlies dan ze opleveren aan functionaliteit.",
             tradual_solution="Revenue Leak Audit™ — Laag 2: De Motor",
             triggered=bool(third_party and third_party.total_third_party_domains and third_party.total_third_party_domains > 15),
         ),
@@ -897,22 +903,27 @@ def calculate_revenue_leak(
         _layer5_toekomst(rich_results, product_feeds, accessibility),
     ]
 
-    monthly_total = sum(
-        (layer.est_monthly_loss_eur or 0) for layer in layers
-        if layer.est_monthly_loss_eur is not None
-    )
-    monthly_total = _r(monthly_total)
-    annual_total = _r(monthly_total * 12)
-
-    direct_monthly = _r(sum(
+    # "Leak" only counts money already leaving the store today — layers 1-3 (speed,
+    # stack, checkout/mobile friction). Layer 4 is upside: the extra revenue sitting in
+    # existing traffic IF those layers get fixed. It is real, but it is not a leak, and
+    # it must never be added to the leak total — that would count the same slowness
+    # problem twice (once as "you're losing this" in layers 1-3, once as "you could gain
+    # this" in layer 4) and inflate the headline number and the ROI payback claim.
+    monthly_total = _r(sum(
         (l.est_monthly_loss_eur or 0) for l in layers if l.layer in (1, 2, 3)
     ))
-    direct_annual = _r(direct_monthly * 12)
+    annual_total = _r(monthly_total * 12)
+    direct_monthly = monthly_total
+    direct_annual = annual_total
+
     efficiency_monthly = _r(next(
         ((l.est_monthly_loss_eur or 0) for l in layers if l.layer == 4), 0.0
     ))
     efficiency_annual = _r(efficiency_monthly * 12)
 
+    # ROI/payback is framed against money currently leaking, not against upside that
+    # depends on the fix already having worked — so it's computed from monthly_total
+    # (direct only), not direct + efficiency.
     roi: RoiCalculation | None = None
     if monthly_total > 0:
         roi = RoiCalculation(

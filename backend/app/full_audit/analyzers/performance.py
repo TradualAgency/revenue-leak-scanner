@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -38,16 +39,6 @@ def _cls_rating_from_val(cls: float | None) -> Rating | None:
     if cls < 0.1:
         return "good"
     if cls < 0.25:
-        return "needs-improvement"
-    return "poor"
-
-
-def _inp_rating_from_ms(ms: float | None) -> Rating | None:
-    if ms is None:
-        return None
-    if ms < 200:
-        return "good"
-    if ms < 500:
         return "needs-improvement"
     return "poor"
 
@@ -121,8 +112,12 @@ def _cwv_from_lab(data: dict) -> MobileCWV:
     return MobileCWV(
         lcp_ms=lcp_ms,
         lcp_rating=_lcp_rating_from_ms(lcp_ms),
-        inp_ms=audit_val("interactive"),
-        inp_rating=_inp_rating_from_ms(audit_val("interactive")),
+        # INP has no lab-simulated equivalent — Lighthouse's "interactive" audit is Time
+        # to Interactive, a page-load metric on a completely different scale (seconds,
+        # not the 200/500ms INP thresholds). Mapping TTI onto inp_ms made every site read
+        # as "INP critical". Leave null; INP is only trustworthy from real-user CrUX data.
+        inp_ms=None,
+        inp_rating=None,
         cls=cls_val,
         cls_rating=_cls_rating_from_val(cls_val),
         fcp_ms=fcp_ms,
@@ -205,7 +200,41 @@ def _tti_ms(data: dict) -> float | None:
     return float(val) if val is not None else None
 
 
-async def analyze_performance(store_url: str, pages: list[dict]) -> Performance:
+def _third_party_summary_by_domain(data: dict) -> dict[str, dict]:
+    """Lighthouse's own `third-party-summary` audit: real transfer size and blocking
+    time per third-party entity, attributed from the actual page load it measured —
+    not a guess. Used to replace the flat 50/15/20 KB constants that used to stand in
+    for a measurement in `third_party.py`.
+
+    Lighthouse groups by "entity" (a business, e.g. "Google"), not literal hostname, so
+    the returned keys are best-effort domains/names for substring matching downstream,
+    not exact hostnames.
+    """
+    audits = data.get("lighthouseResult", {}).get("audits", {})
+    items = audits.get("third-party-summary", {}).get("details", {}).get("items", [])
+    result: dict[str, dict] = {}
+    for item in items:
+        entity = item.get("entity")
+        key: str | None = None
+        if isinstance(entity, dict):
+            url = entity.get("url")
+            if url:
+                key = urlparse(url).netloc.removeprefix("www.").lower()
+            elif entity.get("text"):
+                key = str(entity["text"]).lower()
+        elif isinstance(entity, str):
+            key = entity.lower()
+        if not key:
+            continue
+        result[key] = {
+            "transfer_size_kb": round((item.get("transferSize") or 0) / 1024, 1),
+            "blocking_ms": round(float(item.get("blockingTime") or 0), 1),
+            "main_thread_ms": round(float(item.get("mainThreadTime") or 0), 1),
+        }
+    return result
+
+
+async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Performance, dict[str, dict]]:
     mobile_data = await _call_psi(store_url, strategy="mobile")
     desktop_data = await _call_psi(store_url, strategy="desktop")
 
@@ -247,15 +276,22 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> Performance:
             mobile_cwv = MobileCWV(lcp_ms=estimated_lcp, lcp_rating=lcp_rating)
         notes = "PageSpeed Insights API key not configured — CWV estimated from TTFB only."
 
+    desktop_lighthouse: LighthouseScores | None = None
     if desktop_data:
         audits = desktop_data.get("lighthouseResult", {}).get("audits", {})
         lcp_val = audits.get("largest-contentful-paint", {}).get("numericValue")
         desktop_lcp = float(lcp_val) if lcp_val else None
+        desktop_lighthouse = _lighthouse_from_response(desktop_data)
 
-    return Performance(
+    # Real per-entity weight/blocking-time from the mobile run's own third-party audit —
+    # used downstream to replace the synthetic size/blocking constants in third_party.py.
+    third_party_summary = _third_party_summary_by_domain(mobile_data) if mobile_data else {}
+
+    performance = Performance(
         mobile=mobile_cwv,
         desktop_lcp_ms=desktop_lcp,
         lighthouse=lighthouse,
+        desktop_lighthouse=desktop_lighthouse,
         tbt_ms=tbt,
         speed_index_ms=speed_index,
         tti_ms=tti,
@@ -266,3 +302,4 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> Performance:
         number_of_requests=req_count,
         notes=notes,
     )
+    return performance, third_party_summary

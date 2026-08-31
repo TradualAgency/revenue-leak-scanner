@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 import aiohttp
@@ -15,6 +16,18 @@ _PAYMENT_ICONS = [
     "klarna", "afterpay", "apple pay", "google pay", "shop pay", "bancontact",
     "giropay", "sofort", "sepa",
 ]
+
+# Word-boundary patterns — plain substring matching false-positives on common English
+# words: "ideal" matches "our ideal solution", "sepa" matches "separate".
+_PAYMENT_PATTERNS = {
+    method: re.compile(r"\b" + re.escape(method) + r"\b", re.IGNORECASE)
+    for method in _PAYMENT_ICONS
+    if method != "ideal"
+}
+# "ideal" needs its own case-sensitive pattern: the payment method is styled "iDEAL" or
+# "IDEAL" everywhere in the wild, while plain lowercase "ideal" is virtually always the
+# English word — word boundaries alone don't disambiguate "our ideal solution".
+_PAYMENT_PATTERNS["ideal"] = re.compile(r"\b(?:iDEAL|IDEAL)\b")
 
 
 def _count_address_fields(html: str) -> int:
@@ -93,10 +106,9 @@ def _detect_guest_checkout(html: str) -> bool | None:
 
 
 def _detect_payment_methods(html: str) -> list[str]:
-    text = html.lower()
     found = []
-    for method in _PAYMENT_ICONS:
-        if method in text:
+    for method, pattern in _PAYMENT_PATTERNS.items():
+        if pattern.search(html):
             found.append(method.title())
     return found
 
