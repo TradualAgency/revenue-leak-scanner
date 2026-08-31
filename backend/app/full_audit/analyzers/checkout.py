@@ -185,6 +185,7 @@ async def probe_checkout(store_url: str) -> CheckoutFlow:
         ))
 
     return CheckoutFlow(
+        probe_status="unreachable" if errors else "ok",
         tested_as_mobile=False,
         fields_in_address_form=fields_count,
         guest_checkout_available=guest_available,

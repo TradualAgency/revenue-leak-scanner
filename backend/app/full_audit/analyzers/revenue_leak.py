@@ -342,7 +342,7 @@ def _layer3_lekkage(
     s = bench["scale"]
 
     # — Checkout-latency —
-    checkout_probed = checkout is not None and not checkout.errors_encountered
+    checkout_probed = checkout is not None and checkout.probe_status == "ok"
     friction_count = len(checkout.observed_friction) if checkout and checkout.observed_friction else 0
     no_guest = checkout and checkout.guest_checkout_available is False
     checkout_loss = 0.0
@@ -614,19 +614,6 @@ def _layer5_toekomst(
         status=sd_status,
     ))
 
-    # — Storefront API Responsiveness —
-    sub_scores.append(50.0)
-    metrics.append(RevenueLeakMetric(
-        metric="Hoe snel haalt je winkel productdata op?",
-        what_we_measure="Hoe vlot je productpagina's data ophalen — bepaalt of bezoekers blijven wachten of weglopen",
-        priority="medium",
-        monthly_loss_eur=None,
-        annual_loss_eur=None,
-        calculation_note="Trage data-ophaling → bezoekers wachten langer voor ze producten zien → ze haken af",
-        signal="Vereist diepere meting (niet zichtbaar bij deze scan van buitenaf)",
-        status="not-measured",
-    ))
-
     # — Checkout Accessibility —
     a11y_score = accessibility.lighthouse_score if accessibility else None
     a11y_pct = float(a11y_score) if a11y_score is not None else 50.0
@@ -766,17 +753,6 @@ def _detect_ceo_triggers(
         ),
         CeoTriggerKpi(
             category="Concurrentie & Toekomst",
-            kpi="Marktaandeel daalt bij vergelijkbaar product",
-            what_ceo_sees="Concurrenten met een vergelijkbaar product groeien sneller.",
-            benchmark=None,
-            alarm_signal="Marktaandeel daalt >2% YoY",
-            real_meaning="Bij vergelijkbare producten wint de store met de beste koopervaring. Snelheid wordt de differentiator.",
-            tradual_pitch="Jullie product is niet het probleem. Jullie winkelervaring is het probleem. De klant gaat naar de winkel waar het makkelijker en sneller is.",
-            tradual_solution="Stack Rebuild™ — volledige commerce-infrastructuur",
-            triggered=False,
-        ),
-        CeoTriggerKpi(
-            category="Concurrentie & Toekomst",
             kpi="Geen organische groei ondanks SEO-investering",
             what_ceo_sees="SEO-inspanningen leveren niet op. Rankings stagneren of dalen.",
             benchmark=None,
@@ -829,17 +805,6 @@ def _detect_ceo_triggers(
             tradual_pitch="Jullie groeien in bezoekers maar niet in omzet. Dat betekent: de winkel zelf is het knelpunt, niet jullie marketing. Dicht de lekken en elke extra bezoeker levert eindelijk omzet op.",
             tradual_solution="Revenue Leak Audit™ → Stack Rebuild™",
             triggered=bool(perf_score and perf_score < 60),
-        ),
-        CeoTriggerKpi(
-            category="Omzet & Groei",
-            kpi="Gemiddelde orderwaarde daalt",
-            what_ceo_sees="Klanten kopen steeds minder per bestelling, terwijl het assortiment niet kleiner is geworden.",
-            benchmark=None,
-            alarm_signal="AOV daalt >5% jaar-op-jaar",
-            real_meaning="Een dalende gemiddelde orderwaarde bij gelijk aanbod duidt op cross-sell en upsell die niet werken — of een productpagina die bezoekers alleen naar het goedkoopste artikel stuurt.",
-            tradual_pitch="Jullie laten omzet liggen bij elke bestelling. Een klant die al koopt is de makkelijkste klant om iets extra's aan te verkopen — maar de winkel doet er niets mee.",
-            tradual_solution="CRO Sprint™ — productpagina & winkelmand",
-            triggered=False,
         ),
         CeoTriggerKpi(
             category="Conversie & Funnel",

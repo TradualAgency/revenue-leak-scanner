@@ -425,6 +425,7 @@ export interface FullAuditData {
     notes: string | null;
   } | null;
   checkout_flow: {
+    probe_status: "ok" | "unreachable" | null;
     fields_in_address_form: number | null;
     guest_checkout_available: boolean | null;
     payment_methods_order: string[];
@@ -439,8 +440,6 @@ export interface FullAuditData {
     esp_detection_evidence: string | null;
     newsletter_signup_tested: boolean | null;
     sms_active: boolean | null;
-    est_email_revenue_percent: number | null;
-    benchmark_email_revenue_percent: number;
     notes: string | null;
   } | null;
   seo_health: {
@@ -472,11 +471,13 @@ export interface FullAuditData {
   server_side_tracking: ServerSideTracking | null;
   accessibility: AccessibilityHealth | null;
   product_feeds: ProductFeedHealth | null;
-  site_search: SiteSearchHealth | null;
-  shipping: ShippingHealth | null;
-  returns: ReturnsHealth | null;
-  multi_region: MultiRegionHealth | null;
-  marketplaces: MarketplacePresence | null;
+  detected_stack: {
+    site_search: SiteSearchHealth | null;
+    shipping: ShippingHealth | null;
+    returns: ReturnsHealth | null;
+    multi_region: MultiRegionHealth | null;
+    marketplaces: MarketplacePresence | null;
+  } | null;
   ad_traffic_impact: AdTrafficImpact | null;
   revenue_leak: RevenueLeakReport | null;
   seranking_traffic: SeRankingTraffic | null;

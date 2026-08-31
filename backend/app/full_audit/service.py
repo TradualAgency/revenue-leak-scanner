@@ -39,6 +39,7 @@ from app.full_audit.models import FullAudit
 from app.full_audit.schemas import (
     BloatItem,
     CostAnalysis,
+    DetectedStack,
     DnsEmailHealth,
     FullAuditData,
     Performance,
@@ -299,6 +300,13 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
             )
 
             # 5. Build full data model
+            detected_stack = DetectedStack(
+                site_search=site_search,
+                shipping=shipping,
+                returns=returns,
+                multi_region=multi_region,
+                marketplaces=marketplaces,
+            )
             audit_data = FullAuditData(
                 store_url=store_url,
                 company_name=audit.company_name,
@@ -324,11 +332,7 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 server_side_tracking=server_side_tracking,
                 accessibility=accessibility,
                 product_feeds=product_feeds,
-                site_search=site_search,
-                shipping=shipping,
-                returns=returns,
-                multi_region=multi_region,
-                marketplaces=marketplaces,
+                detected_stack=detected_stack,
                 ad_traffic_impact=ad_traffic_impact,
                 revenue_leak=revenue_leak,
                 seranking_traffic=seranking_traffic,

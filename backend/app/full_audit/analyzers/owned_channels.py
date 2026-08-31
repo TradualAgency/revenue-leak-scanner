@@ -253,12 +253,6 @@ async def detect_owned_channels(store_url: str, pages: list[dict]) -> OwnedChann
         esp_detected=esp,
         esp_detection_evidence=ev,
         newsletter_signup_tested=newsletter_signup,
-        welcome_flow_observed=None,
-        abandoned_cart_flow_observed=None,
-        post_purchase_flow_observed=None,
-        win_back_flow_observed=None,
-        est_email_revenue_percent=None,
-        benchmark_email_revenue_percent=30.0,
         sms_active=sms_active if sms_active else None,
         notes=" ".join(notes_parts),
     )

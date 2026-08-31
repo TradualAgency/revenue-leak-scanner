@@ -82,10 +82,10 @@ def _checkout_for_ai(audit: FullAuditData) -> dict | None:
     cf = audit.checkout_flow
     if not cf:
         return None
-    if cf.errors_encountered:
+    if cf.probe_status == "unreachable":
         return {
             "probe_status": "unreachable",
-            "reason": cf.errors_encountered[0],
+            "reason": cf.errors_encountered[0] if cf.errors_encountered else None,
             "note": "Geen betrouwbare data over volgorde/velden/methodes — geen claims doen.",
         }
     return cf.model_dump(mode="json")
@@ -249,11 +249,7 @@ def _top_summary_payload(audit: FullAuditData) -> str:
         "server_side_tracking": audit.server_side_tracking.model_dump(mode="json") if audit.server_side_tracking else None,
         "accessibility": audit.accessibility.model_dump(mode="json") if audit.accessibility else None,
         "product_feeds": audit.product_feeds.model_dump(mode="json") if audit.product_feeds else None,
-        "site_search": audit.site_search.model_dump(mode="json") if audit.site_search else None,
-        "shipping": audit.shipping.model_dump(mode="json") if audit.shipping else None,
-        "returns": audit.returns.model_dump(mode="json") if audit.returns else None,
-        "multi_region": audit.multi_region.model_dump(mode="json") if audit.multi_region else None,
-        "marketplaces": audit.marketplaces.model_dump(mode="json") if audit.marketplaces else None,
+        "detected_stack": audit.detected_stack.model_dump(mode="json") if audit.detected_stack else None,
         "ad_traffic_impact": audit.ad_traffic_impact.model_dump(mode="json") if audit.ad_traffic_impact else None,
         "revenue_leak": audit.revenue_leak.model_dump(mode="json") if audit.revenue_leak else None,
         "business_context": _business_context(audit),

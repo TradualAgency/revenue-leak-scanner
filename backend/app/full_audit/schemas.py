@@ -120,6 +120,11 @@ class ObservedFriction(BaseModel):
 
 
 class CheckoutFlow(BaseModel):
+    # "ok" = probe reached a checkout-like page; "unreachable" = it didn't (redirect,
+    # 404, exception — common on Shopify where checkout needs items in cart or lives on
+    # a separate domain). The AI skills already gate on this field name; it used to only
+    # exist ad-hoc in the AI payload builder, not on the schema itself.
+    probe_status: Literal["ok", "unreachable"] | None = None
     tested_as_mobile: bool | None = None
     fields_in_address_form: int | None = None
     guest_checkout_available: bool | None = None
@@ -133,15 +138,14 @@ class CheckoutFlow(BaseModel):
 
 
 class OwnedChannels(BaseModel):
+    # Email/SMS *flow* observability (welcome, abandoned cart, post-purchase, win-back,
+    # and the revenue % they drive) requires inbox or ESP-account access — structurally
+    # impossible outside-only, not "not yet implemented". Those fields used to ship as
+    # permanent nulls next to a hardcoded 30% benchmark; dropped rather than shipping
+    # dead placeholders forever.
     esp_detected: str | None = None
     esp_detection_evidence: str | None = None
     newsletter_signup_tested: bool | None = None
-    welcome_flow_observed: bool | None = None
-    abandoned_cart_flow_observed: bool | None = None
-    post_purchase_flow_observed: bool | None = None
-    win_back_flow_observed: bool | None = None
-    est_email_revenue_percent: float | None = None
-    benchmark_email_revenue_percent: float = 30.0
     sms_active: bool | None = None
     notes: str | None = None
 
@@ -458,6 +462,17 @@ class MarketplacePresence(BaseModel):
     evidence: str | None = None
 
 
+class DetectedStack(BaseModel):
+    """Pure vendor/signal detection with no benchmark, cost, or action attached — these
+    five used to be separate top-level report sections, which made five thin signals
+    read as five sections of depth. One combined block, sized to match what it is."""
+    site_search: SiteSearchHealth | None = None
+    shipping: ShippingHealth | None = None
+    returns: ReturnsHealth | None = None
+    multi_region: MultiRegionHealth | None = None
+    marketplaces: MarketplacePresence | None = None
+
+
 class FullAuditData(BaseModel):
     store_url: str
     company_name: str | None = None
@@ -490,11 +505,7 @@ class FullAuditData(BaseModel):
     server_side_tracking: ServerSideTracking | None = None
     accessibility: AccessibilityHealth | None = None
     product_feeds: ProductFeedHealth | None = None
-    site_search: SiteSearchHealth | None = None
-    shipping: ShippingHealth | None = None
-    returns: ReturnsHealth | None = None
-    multi_region: MultiRegionHealth | None = None
-    marketplaces: MarketplacePresence | None = None
+    detected_stack: DetectedStack | None = None
     ad_traffic_impact: AdTrafficImpact | None = None
     revenue_leak: RevenueLeakReport | None = None
     seranking_traffic: SeRankingTraffic | None = None

@@ -25,7 +25,7 @@ Reageer uitsluitend met geldige JSON (geen markdown, geen uitleg erbuiten) die e
   "thirdPartyNotes": "<1 alinea over third-party script bloat: aantal domeinen, blocking time, overbodige tools>",
   "trackingNotes": "<1 alinea over tracking gaps: pixel health, attribution loss, server-side situatie>",
   "checkoutNotes": "<1 alinea over checkout friction: gevonden obstakels, impact op conversie>",
-  "channelsNotes": "<1 alinea over owned channels: ESP, e-mailflows aanwezig of afwezig, benchmark vergelijking>",
+  "channelsNotes": "<1 alinea over owned channels: welke ESP gedetecteerd, of er een nieuwsbrief-aanmelding en SMS-opt-in gevonden zijn. Schrijf niets over welkomst-, cart-herstel-, post-purchase- of win-back-e-mailflows of hun omzetaandeel — die zijn van buitenaf niet te zien en horen niet in deze scan>",
   "seoNotes": "<1 alinea over SEO-gezondheid: schema markup, organische trend, structured data kansen>",
   "securityNotes": "<1 alinea over security en compliance: SSL, DMARC, GDPR aandachtspunten>",
   "costNotes": "<1 alinea over tech-stack kosten: huidige kosten, redundante tools, besparingsmogelijkheid per maand>",

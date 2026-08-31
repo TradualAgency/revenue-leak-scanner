@@ -451,44 +451,7 @@ function OwnedChannelsSection({ data }: { data: NonNullable<FullAuditData["owned
           <Pill label={`SMS: ${data.sms_active ? "actief" : "niet gedetecteerd"}`} tone={data.sms_active ? "good" : "neutral"} />
         )}
       </div>
-      {data.est_email_revenue_percent != null && (
-        <div className="mt-4 flex items-center gap-4">
-          <div>
-            <span className={`text-2xl font-semibold ${data.est_email_revenue_percent < data.benchmark_email_revenue_percent ? "text-red-500" : "text-emerald-600"}`}>
-              {data.est_email_revenue_percent}%
-            </span>
-            <span className="text-xs text-gray-400 ml-1">email revenue</span>
-          </div>
-          <div>
-            <span className="text-gray-400 text-sm">benchmark: {data.benchmark_email_revenue_percent}%</span>
-          </div>
-        </div>
-      )}
       {data.notes && <p className="text-xs text-gray-400 mt-3 italic">{data.notes}</p>}
-    </SectionCard>
-  );
-}
-
-function SeoSection({ data }: { data: NonNullable<FullAuditData["seo_health"]> }) {
-  return (
-    <SectionCard title="SEO Health">
-      <div className="flex gap-2 flex-wrap mb-3">
-        {data.has_schema_markup != null && (
-          <Pill label={`Schema markup: ${data.has_schema_markup ? "aanwezig" : "ontbreekt"}`} tone={data.has_schema_markup ? "good" : "warn"} />
-        )}
-        {data.hreflang_setup && (
-          <Pill
-            label={`Hreflang: ${data.hreflang_setup}`}
-            tone={data.hreflang_setup === "correct" ? "good" : data.hreflang_setup === "incorrect" ? "bad" : "neutral"}
-          />
-        )}
-        {data.programmatic_pages_detected != null && (
-          <Pill label={`Programmatic: ${data.programmatic_pages_detected ? "ja" : "nee"}`} tone="neutral" />
-        )}
-      </div>
-      {data.schema_issues && <p className="text-xs text-amber-600 mb-2">{data.schema_issues}</p>}
-      {data.programmatic_quality && <KV label="Programmatic patroon" value={data.programmatic_quality} />}
-      {data.notes && <p className="text-xs text-gray-400 mt-2 italic">{data.notes}</p>}
     </SectionCard>
   );
 }
@@ -1304,75 +1267,111 @@ function ProductFeedsSection({ data }: { data: NonNullable<FullAuditData["produc
   );
 }
 
-function SiteSearchSection({ data }: { data: NonNullable<FullAuditData["site_search"]> }) {
+function DetectedStackSection({ data }: { data: NonNullable<FullAuditData["detected_stack"]> }) {
+  const { site_search, shipping, returns, multi_region, marketplaces } = data;
   return (
-    <SectionCard title="Zoekfunctie (Site Search)">
-      {data.provider_detected ? (
-        <div className="mb-3">
-          <span className="text-sm font-semibold text-gray-800">{data.provider_detected}</span>
-          <Pill label="gedetecteerd" tone="good" />
-        </div>
-      ) : (
-        <p className="text-sm text-gray-500 mb-3">Geen bekende search provider gedetecteerd</p>
-      )}
-      <VendorList vendors={data.detected_vendors} />
-      <StatusPill ok={data.native_search_present} labelOk="Native search aanwezig" labelBad="Geen search gevonden" />
-    </SectionCard>
-  );
-}
+    <SectionCard title="Gedetecteerde stack">
+      <p className="text-xs text-gray-400 mb-4">
+        Losse vendor-signalen zonder benchmark of kostenclaim — puur wat er gedetecteerd is.
+      </p>
 
-function ShippingSection({ data }: { data: NonNullable<FullAuditData["shipping"]> }) {
-  return (
-    <SectionCard title="Shipping & Carriers">
-      {data.providers_detected.length > 0 ? (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {data.providers_detected.map((p) => (
-            <Pill key={p} label={p} tone="neutral" />
-          ))}
+      {site_search && (
+        <div className="mb-5 pb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Zoekfunctie</p>
+          {site_search.provider_detected ? (
+            <div className="mb-2">
+              <span className="text-sm font-semibold text-gray-800">{site_search.provider_detected}</span>
+              <Pill label="gedetecteerd" tone="good" />
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 mb-2">Geen bekende search provider gedetecteerd</p>
+          )}
+          <VendorList vendors={site_search.detected_vendors} />
+          <StatusPill ok={site_search.native_search_present} labelOk="Native search aanwezig" labelBad="Geen search gevonden" />
         </div>
-      ) : (
-        <p className="text-sm text-gray-500 mb-3">Geen carrier integratie gedetecteerd</p>
       )}
-      <VendorList vendors={data.detected_vendors} />
-    </SectionCard>
-  );
-}
 
-function ReturnsSection({ data }: { data: NonNullable<FullAuditData["returns"]> }) {
-  return (
-    <SectionCard title="Returns Infrastructuur">
-      {data.providers_detected.length > 0 ? (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {data.providers_detected.map((p) => (
-            <Pill key={p} label={p} tone="good" />
-          ))}
+      {shipping && (
+        <div className="mb-5 pb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Shipping & Carriers</p>
+          {shipping.providers_detected.length > 0 ? (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {shipping.providers_detected.map((p) => (
+                <Pill key={p} label={p} tone="neutral" />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 mb-2">Geen carrier integratie gedetecteerd</p>
+          )}
+          <VendorList vendors={shipping.detected_vendors} />
         </div>
-      ) : (
-        <p className="text-sm text-gray-500 mb-3">Geen returns platform gedetecteerd</p>
       )}
-      <VendorList vendors={data.detected_vendors} />
-      {data.returns_portal_url && (
-        <KV label="Returns portal" value={data.returns_portal_url} mono />
-      )}
-    </SectionCard>
-  );
-}
 
-function MultiRegionSection({ data }: { data: NonNullable<FullAuditData["multi_region"]> }) {
-  return (
-    <SectionCard title="Multi-currency & Regio">
-      <div className="flex flex-wrap gap-2 mb-4">
-        <StatusPill ok={data.currency_switcher_detected} labelOk="Currency switcher ✓" labelBad="Geen currency switcher" />
-        <StatusPill ok={data.vary_accept_language} labelOk="Vary: Accept-Language ✓" labelBad="Geen taal-vary header" />
-        {data.geo_redirect_detected != null && (
-          <Pill label={`Geo redirect: ${data.geo_redirect_detected ? "ja" : "nee"}`} tone={data.geo_redirect_detected ? "good" : "neutral"} />
-        )}
-      </div>
-      {data.currencies_detected.length > 0 && (
-        <KV label="Valuta gedetecteerd" value={data.currencies_detected.join(", ")} />
+      {returns && (
+        <div className="mb-5 pb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Returns</p>
+          {returns.providers_detected.length > 0 ? (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {returns.providers_detected.map((p) => (
+                <Pill key={p} label={p} tone="good" />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 mb-2">Geen returns platform gedetecteerd</p>
+          )}
+          <VendorList vendors={returns.detected_vendors} />
+          {returns.returns_portal_url && (
+            <KV label="Returns portal" value={returns.returns_portal_url} mono />
+          )}
+        </div>
       )}
-      {data.hreflang_count != null && (
-        <KV label="Hreflang tags" value={`${data.hreflang_count}`} />
+
+      {multi_region && (
+        <div className="mb-5 pb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Multi-currency & Regio</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <StatusPill ok={multi_region.currency_switcher_detected} labelOk="Currency switcher ✓" labelBad="Geen currency switcher" />
+            <StatusPill ok={multi_region.vary_accept_language} labelOk="Vary: Accept-Language ✓" labelBad="Geen taal-vary header" />
+            {multi_region.geo_redirect_detected != null && (
+              <Pill label={`Geo redirect: ${multi_region.geo_redirect_detected ? "ja" : "nee"}`} tone={multi_region.geo_redirect_detected ? "good" : "neutral"} />
+            )}
+          </div>
+          {multi_region.currencies_detected.length > 0 && (
+            <KV label="Valuta gedetecteerd" value={multi_region.currencies_detected.join(", ")} />
+          )}
+          {multi_region.hreflang_count != null && (
+            <KV label="Hreflang tags" value={`${multi_region.hreflang_count}`} />
+          )}
+        </div>
+      )}
+
+      {marketplaces && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Marketplace & Reviews</p>
+          {marketplaces.platforms_detected.length > 0 && (
+            <div className="mb-2">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Marketplaces</p>
+              <div className="flex flex-wrap gap-2">
+                {marketplaces.platforms_detected.map((p) => (
+                  <Pill key={p} label={p} tone="neutral" />
+                ))}
+              </div>
+            </div>
+          )}
+          {marketplaces.review_platforms_detected.length > 0 && (
+            <div className="mb-2">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Review platforms</p>
+              <div className="flex flex-wrap gap-2">
+                {marketplaces.review_platforms_detected.map((p) => (
+                  <Pill key={p} label={p} tone="good" />
+                ))}
+              </div>
+            </div>
+          )}
+          {marketplaces.platforms_detected.length === 0 && marketplaces.review_platforms_detected.length === 0 && (
+            <p className="text-sm text-gray-500">Geen marketplace of review platform gedetecteerd</p>
+          )}
+        </div>
       )}
     </SectionCard>
   );
@@ -1402,36 +1401,6 @@ function SanityExportSection({ data }: { data: Record<string, unknown> }) {
       <pre className="overflow-auto max-h-96 text-xs text-gray-300 font-mono leading-relaxed">
         {json}
       </pre>
-    </SectionCard>
-  );
-}
-
-function MarketplacesSection({ data }: { data: NonNullable<FullAuditData["marketplaces"]> }) {
-  return (
-    <SectionCard title="Marketplace & Review aanwezigheid">
-      {data.platforms_detected.length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Marketplaces</p>
-          <div className="flex flex-wrap gap-2">
-            {data.platforms_detected.map((p) => (
-              <Pill key={p} label={p} tone="neutral" />
-            ))}
-          </div>
-        </div>
-      )}
-      {data.review_platforms_detected.length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Review platforms</p>
-          <div className="flex flex-wrap gap-2">
-            {data.review_platforms_detected.map((p) => (
-              <Pill key={p} label={p} tone="good" />
-            ))}
-          </div>
-        </div>
-      )}
-      {data.platforms_detected.length === 0 && data.review_platforms_detected.length === 0 && (
-        <p className="text-sm text-gray-500">Geen marketplace of review platform gedetecteerd</p>
-      )}
     </SectionCard>
   );
 }
@@ -1637,7 +1606,6 @@ export default function FullAuditResults() {
               {auditData.tracking_data_quality && <TrackingSection data={auditData.tracking_data_quality} />}
               {auditData.checkout_flow && <CheckoutSection data={auditData.checkout_flow} />}
               {auditData.owned_channels && <OwnedChannelsSection data={auditData.owned_channels} />}
-              {auditData.seo_health && <SeoSection data={auditData.seo_health} />}
               {auditData.security_compliance && <SecuritySection data={auditData.security_compliance} />}
               {auditData.cost_analysis && <CostSection data={auditData.cost_analysis} />}
               {auditData.dns_email && <DnsEmailSection data={auditData.dns_email} />}
@@ -1645,11 +1613,7 @@ export default function FullAuditResults() {
               {auditData.rich_results && <RichResultsSection data={auditData.rich_results} />}
               {auditData.server_side_tracking && <ServerSideTrackingSection data={auditData.server_side_tracking} />}
               {auditData.product_feeds && <ProductFeedsSection data={auditData.product_feeds} />}
-              {auditData.site_search && <SiteSearchSection data={auditData.site_search} />}
-              {auditData.shipping && <ShippingSection data={auditData.shipping} />}
-              {auditData.returns && <ReturnsSection data={auditData.returns} />}
-              {auditData.multi_region && <MultiRegionSection data={auditData.multi_region} />}
-              {auditData.marketplaces && <MarketplacesSection data={auditData.marketplaces} />}
+              {auditData.detected_stack && <DetectedStackSection data={auditData.detected_stack} />}
               {auditData.accessibility && <AccessibilitySection data={auditData.accessibility} />}
               {auditData.cro_observations.length > 0 && <CroSection items={auditData.cro_observations} />}
               {(auditData.bloat_what_must_go.length > 0 || auditData.ai_analysis?.bloat) && <BloatSection items={auditData.bloat_what_must_go} aiInsight={auditData.ai_analysis?.bloat} />}
