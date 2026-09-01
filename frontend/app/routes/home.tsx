@@ -123,35 +123,55 @@ const faqs = [
 export default function Home() {
   return (
     <div className="min-h-screen bg-[#FAFAF8] text-gray-900 flex flex-col">
-      <Header />
+      <Header overlay />
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-[#0a2f23] to-[#1a4a3a] text-white py-28 px-4">
-        <div className="max-w-4xl mx-auto text-center flex flex-col items-center gap-6">
-          <div className="inline-block bg-white/10 text-[#c5a96f] text-xs font-medium uppercase tracking-widest px-4 py-1.5 rounded-full">
-            Free Revenue Audit
+      <div className="p-5 h-svh">
+        <section className="relative overflow-hidden rounded-2xl h-full flex items-center px-6 sm:px-8 py-16">
+          <div className="absolute inset-0 bg-tradual-primary">
+            <video
+              className="hero-video w-full h-full object-cover"
+              src="/hero-loop-f1.mp4"
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            <div className="absolute inset-0 bg-tradual-primary/75" />
           </div>
-          <h1
-            className="text-4xl sm:text-5xl md:text-6xl font-semibold leading-tight"
-            style={{ fontFamily: "var(--font-serif)" }}
-          >
-            Unlock the Revenue Your Store
-            <br />
-            <span className="text-[#c5a96f]">Is Leaving on the Table.</span>
-          </h1>
-          <p className="text-[#c5a96f] font-medium text-lg">Get Your Free Audit in 60 Seconds.</p>
-          <p className="text-lg sm:text-xl text-gray-300 max-w-2xl font-light">
-            We scan your store's speed, plugins, and infrastructure — then show you exactly how much revenue you're losing and how to get it back.
-          </p>
-          <a
-            href="#scan"
-            className="bg-[#c5a96f] hover:bg-[#b8975e] text-white font-medium px-8 py-4 rounded-xl text-lg transition-colors shadow-lg tracking-wide"
-          >
-            Get My Free Audit
-          </a>
-          <p className="text-gray-400 text-sm">No credit card required · Results in 60 seconds</p>
-        </div>
-      </section>
+          <div className="relative z-10 max-w-7xl mx-auto w-full">
+            <p className="uppercase text-tradual-accent font-serif text-[10px] tracking-[0.18em] mb-4">
+              The E-commerce Performance Company
+            </p>
+            <h1 className="font-serif font-medium text-white text-[40px] md:text-[68px] max-w-4xl leading-[1.05] mb-6">
+              More revenue from the traffic you already have.
+            </h1>
+            <p className="max-w-2xl text-white/80 text-base md:text-lg leading-relaxed mb-8">
+              You already pay for demand. But between the click and the payment, revenue leaks away: through speed, mobile UX, checkout, and tracking. We make visible how much that costs you, and we build it out.
+            </p>
+            <div className="flex flex-col sm:flex-row items-start gap-4">
+              <a
+                href="#scan"
+                className="inline-flex items-center justify-center px-8 py-3 font-medium transition bg-tradual-accent text-tradual-primary hover:opacity-90"
+              >
+                Request a Revenue Leak Audit
+              </a>
+              <a
+                href="#how-it-works"
+                className="inline-flex items-center justify-center px-8 py-3 font-medium transition bg-transparent border border-tradual-accent text-tradual-accent hover:bg-tradual-accent/10"
+              >
+                How Revenue Leak works
+              </a>
+            </div>
+            <p className="mt-6 text-white/60 text-xs md:text-sm">
+              For Dutch DTC brands on Shopify with €1–10M online revenue.
+            </p>
+          </div>
+        </section>
+      </div>
 
       {/* Social Proof Bar */}
       <section className="py-8 px-4 bg-white border-b border-gray-100">

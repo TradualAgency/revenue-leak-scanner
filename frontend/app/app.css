@@ -15,3 +15,9 @@ html,
 body {
   @apply bg-[#FAFAF8];
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-video {
+    display: none;
+  }
+}
