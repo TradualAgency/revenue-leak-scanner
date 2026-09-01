@@ -76,6 +76,13 @@ class Performance(BaseModel):
     unused_javascript_kb: float | None = None
     total_page_weight_kb: float | None = None
     number_of_requests: int | None = None
+    # Everything above is measured on the homepage — commercially the least relevant
+    # page. This is the one PSI run (mobile) on an actual revenue page: a PDP if one was
+    # scraped, else a collection page.
+    money_page_url: str | None = None
+    money_page_type: Literal["pdp", "collection"] | None = None
+    money_page_lcp_ms: float | None = None
+    money_page_lighthouse: LighthouseScores | None = None
     notes: str | None = None
 
 
@@ -129,6 +136,7 @@ class CheckoutFlow(BaseModel):
     fields_in_address_form: int | None = None
     guest_checkout_available: bool | None = None
     payment_methods_order: list[str] = []
+    express_checkout_methods: list[str] = []
     redirects_before_payment: int | None = None
     errors_encountered: list[str] = []
     total_checkout_time_seconds: float | None = None
@@ -246,6 +254,28 @@ class SeRankingTraffic(BaseModel):
     raw_response: dict | None = None
 
 
+class CompetitorBenchmark(BaseModel):
+    domain: str
+    avg_keyword_position: float | None = None
+    organic_keywords_count: int | None = None
+    est_organic_traffic_value_usd: float | None = None
+    intersecting_keywords: int | None = None
+
+
+class CompetitorBenchmarkReport(BaseModel):
+    """Via DataForSEO Labs (not SE Ranking — the account configured for this app
+    doesn't have access to SE Ranking's domain-overview endpoint). Real per-call cost,
+    so this is cached on the audit row like SE Ranking traffic is."""
+    store_domain: str
+    store_organic_keywords_count: int | None = None
+    store_est_organic_traffic_value_usd: float | None = None
+    competitors: list[CompetitorBenchmark] = []
+    location_code: int
+    language_code: str
+    data_source: Literal["dataforseo"] = "dataforseo"
+    notes: str | None = None
+
+
 class AdTrafficImpact(BaseModel):
     est_post_click_bounce_pct: float | None = None
     bounce_baseline_pct: float = 45.0
@@ -260,6 +290,58 @@ class AdTrafficImpact(BaseModel):
 
 MetricStatus = Literal["good", "warning", "critical", "not-measured"]
 
+# --- Funnel model (analyzers/funnel.py) --------------------------------------------
+# Replaces the old `scale = monthly_revenue / 9_000` mechanism: every revenue-leak
+# euro figure is now `funnel.monthly_revenue_eur * exposure_share * relative_uplift`,
+# where `monthly_revenue_eur` comes from the funnel (sessions x cr x aov), not from
+# the operator-supplied revenue figure alone.
+Confidence = Literal["high", "medium", "low"]
+FunnelStage = Literal["session", "product_view", "add_to_cart", "reach_checkout", "purchase"]
+MetricKind = Literal["revenue", "cost", "diagnostic", "restatement"]
+InputSource = Literal["operator", "seranking", "derived", "benchmark"]
+
+
+class FunnelStageModel(BaseModel):
+    stage: FunnelStage
+    entering: float
+    exit_rate: float
+    exit_rate_source: Literal["benchmark", "calibrated", "measured"] = "benchmark"
+    citation: str | None = None
+
+
+class FunnelModel(BaseModel):
+    monthly_sessions: float
+    conversion_rate: float
+    aov_eur: float
+    monthly_revenue_eur: float  # sessions x cr x aov — authoritative for all loss math
+    monthly_purchases: float
+    monthly_ad_spend_eur: float
+    mobile_share: float = 0.70
+    paid_share: float = 0.30
+    stages: list[FunnelStageModel] = []
+    calibration_factor: float = 1.0
+    sessions_source: InputSource = "benchmark"
+    cr_source: InputSource = "benchmark"
+    aov_source: InputSource = "benchmark"
+    ad_spend_source: InputSource = "benchmark"
+    operator_monthly_revenue_eur: float | None = None  # context only, never used for loss math
+    data_source: Literal["measured", "heuristic"] = "heuristic"
+    methodology_note: str | None = None
+
+
+class DataConflict(BaseModel):
+    kind: Literal["revenue_vs_funnel", "ad_spend_vs_revenue"]
+    operator_value_eur: float
+    model_value_eur: float
+    ratio: float
+    severity: Literal["warning", "critical"] = "warning"
+    message_nl: str
+
+
+class ModelWarning(BaseModel):
+    kind: Literal["stage_ceiling_bound", "global_ceiling_bound", "duplicate_finding", "negative_payback"]
+    detail: str
+
 
 class RevenueLeakMetric(BaseModel):
     metric: str
@@ -270,6 +352,22 @@ class RevenueLeakMetric(BaseModel):
     calculation_note: str
     signal: str | None = None
     status: MetricStatus = "not-measured"
+    # --- funnel-model additions — all optional so v1 jsonb rows still parse ---
+    monthly_loss_eur_low: float | None = None
+    monthly_loss_eur_high: float | None = None
+    annual_loss_eur_low: float | None = None
+    annual_loss_eur_high: float | None = None
+    finding_id: str | None = None
+    funnel_stage: FunnelStage | None = None
+    exposure_share: float | None = None
+    uplift_low: float | None = None
+    uplift_high: float | None = None
+    confidence: Confidence = "medium"
+    kind: MetricKind = "revenue"
+    basis: str | None = None
+    citation: str | None = None
+    verify_manually: bool = False
+    pages_affected: list[str] = []
 
 
 class CeoTriggerKpi(BaseModel):
@@ -290,6 +388,16 @@ class RoiCalculation(BaseModel):
     stack_rebuild_cost_eur: float = 35000.0
     payback_months: float | None = None
     year_one_net_return_eur: float
+    # --- funnel-model additions ---
+    monthly_leak_eur_low: float | None = None
+    monthly_leak_eur_high: float | None = None
+    annual_leak_eur_low: float | None = None
+    annual_leak_eur_high: float | None = None
+    payback_months_best: float | None = None
+    payback_months_worst: float | None = None
+    year_one_net_return_eur_low: float | None = None
+    year_one_net_return_eur_high: float | None = None
+    pays_back_within_12_months: bool | None = None
 
 
 class RevenueLeakLayer(BaseModel):
@@ -306,6 +414,13 @@ class RevenueLeakLayer(BaseModel):
     good_signals: list[str] = []
     improvement_signals: list[str] = []
     readiness_score: int | None = None
+    # --- funnel-model additions ---
+    est_monthly_loss_eur_low: float | None = None
+    est_monthly_loss_eur_high: float | None = None
+    est_annual_loss_eur_low: float | None = None
+    est_annual_loss_eur_high: float | None = None
+    kind: Literal["revenue", "cost", "diagnostic", "restatement", "readiness"] = "revenue"
+    unpriced_finding_count: int = 0
 
 
 class RevenueLeakReport(BaseModel):
@@ -320,6 +435,19 @@ class RevenueLeakReport(BaseModel):
     ceo_triggers: list[CeoTriggerKpi] = []
     roi: RoiCalculation | None = None
     data_source: Literal["measured", "heuristic"] = "heuristic"
+    # --- funnel-model additions — all optional; absent/None means a pre-rewrite (v1)
+    # report, which the frontend renders via the legacy path ---
+    funnel: FunnelModel | None = None
+    data_conflicts: list[DataConflict] = []
+    model_warnings: list[ModelWarning] = []
+    total_monthly_loss_eur_low: float | None = None
+    total_monthly_loss_eur_high: float | None = None
+    total_annual_loss_eur_low: float | None = None
+    total_annual_loss_eur_high: float | None = None
+    cost_monthly_eur: float | None = None
+    leak_share_of_revenue_low: float | None = None
+    leak_share_of_revenue_high: float | None = None
+    model_version: str | None = None  # None == pre-rewrite report; new reports set "2.0"
 
 
 class ShopifyMigrationInsight(BaseModel):
@@ -421,9 +549,62 @@ class ProductFeedHealth(BaseModel):
     google_merchant_ready_estimate: MerchantReadyEstimate | None = None
 
 
+class ShopifyAppsHealth(BaseModel):
+    """Real Shopify app detection via app-extension script UUIDs
+    (cdn.shopify.com/extensions/<uuid>/...) — distinct from third_party_scripts, which
+    counts *domains* (trackers, embeds, fonts) and isn't an app signal at all. App names
+    aren't resolvable from a UUID without Shopify's non-public Admin API, so this reports
+    counts/ids, not vendor names."""
+    app_extension_count: int | None = None
+    app_extension_ids: list[str] = []
+    evidence: str | None = None
+    notes: str | None = None
+
+
+class ShopifyCatalogHealth(BaseModel):
+    """From Shopify's public /products.json and /collections.json endpoints — a sample,
+    not a guaranteed full-catalog count (capped at one page of up to 250 products)."""
+    detected: bool | None = None
+    product_count_sampled: int | None = None
+    products_out_of_stock: int | None = None
+    out_of_stock_ratio_pct: float | None = None
+    products_missing_images: int | None = None
+    products_missing_description: int | None = None
+    collection_count_sampled: int | None = None
+    theme_name: str | None = None
+    theme_id: int | None = None
+    evidence: str | None = None
+
+
 class VendorDetection(BaseModel):
     name: str
     confidence: DetectionConfidence
+    evidence: str | None = None
+
+
+class EuComplianceHealth(BaseModel):
+    """Heuristic signals only — NOT a legal compliance verdict. Omnibus (price-history
+    disclosure on discounts) and GPSR (responsible-person/manufacturer disclosure) both
+    depend on exact page content, product category, and phrasing that a scan can't fully
+    verify. Absence of a detected signal means "not found in what we scraped", not
+    "missing" — never present this as legal advice."""
+    pdp_sampled_url: str | None = None
+    has_strikethrough_price: bool | None = None
+    has_lowest_price_disclosure: bool | None = None
+    omnibus_risk_signal: bool | None = None
+    gpsr_responsible_person_mentioned: bool | None = None
+    evidence: str | None = None
+    notes: str | None = None
+
+
+class RetentionHealth(BaseModel):
+    """Repeat-purchase infrastructure: subscriptions, loyalty/points programs, and
+    bundle/upsell tooling. Pure vendor detection — no revenue-impact estimate, since
+    repeat-rate impact depends on program design and adoption, neither of which is
+    visible from outside."""
+    subscription_detected: list[VendorDetection] = []
+    loyalty_detected: list[VendorDetection] = []
+    bundling_detected: list[VendorDetection] = []
     evidence: str | None = None
 
 
@@ -481,6 +662,10 @@ class FullAuditData(BaseModel):
     contact_email: str | None = None
     contact_person: str | None = None
     estimated_annual_revenue_eur: float | None = None
+    aov_eur: float | None = None
+    monthly_sessions: int | None = None
+    conversion_rate_pct: float | None = None
+    monthly_ad_spend_eur: float | None = None
     intro: str | None = None
     core_thesis: str | None = None
     audit_summary: str | None = None
@@ -506,9 +691,14 @@ class FullAuditData(BaseModel):
     accessibility: AccessibilityHealth | None = None
     product_feeds: ProductFeedHealth | None = None
     detected_stack: DetectedStack | None = None
+    shopify_catalog: ShopifyCatalogHealth | None = None
+    shopify_apps: ShopifyAppsHealth | None = None
+    retention: RetentionHealth | None = None
+    eu_compliance: EuComplianceHealth | None = None
     ad_traffic_impact: AdTrafficImpact | None = None
     revenue_leak: RevenueLeakReport | None = None
     seranking_traffic: SeRankingTraffic | None = None
+    competitor_benchmark: CompetitorBenchmarkReport | None = None
     ai_analysis: AiAnalysis | None = None
     sanity_export: dict | None = None
 
@@ -521,6 +711,13 @@ class FullAuditRequest(BaseModel):
     contact_email: str | None = None
     contact_person: str | None = None
     estimated_annual_revenue_eur: float | None = None
+    # Optional operator-supplied business inputs. When provided, these replace the
+    # revenue-bucket AOV guess, the 3% benchmark CVR, and the 15%-of-revenue ad-spend
+    # assumption in the revenue-leak model with the store's real numbers.
+    aov_eur: float | None = None
+    monthly_sessions: int | None = None
+    conversion_rate_pct: float | None = None
+    monthly_ad_spend_eur: float | None = None
 
 
 class FullAuditCreateResponse(BaseModel):

@@ -70,12 +70,26 @@ class TopSummaryResponse(BaseModel):
 
 def _business_context(audit: FullAuditData) -> dict:
     annual = audit.estimated_annual_revenue_eur
-    monthly = (annual or 108_000) / 12
-    return {
+    # Prefer the revenue-leak model's reconciled funnel revenue over independently
+    # recomputing `(annual or 108_000) / 12` here — that used to be a THIRD place in
+    # the codebase deriving "monthly revenue" from the same operator input, and it
+    # could tell the AI skills a different number than the euros they were also
+    # shown in `revenue_leak`. See funnel.build_funnel_model's reconciliation.
+    funnel = audit.revenue_leak.funnel if audit.revenue_leak else None
+    if funnel is not None:
+        monthly = funnel.monthly_revenue_eur
+        source = funnel.data_source
+    else:
+        monthly = (annual or 108_000) / 12
+        source = "operator_input" if annual else "fallback_benchmark"
+    context: dict = {
         "estimated_annual_revenue_eur": annual,
         "estimated_monthly_revenue_eur": monthly,
-        "source": "operator_input" if annual else "fallback_benchmark",
+        "source": source,
     }
+    if audit.revenue_leak and audit.revenue_leak.data_conflicts:
+        context["data_conflicts"] = [c.message_nl for c in audit.revenue_leak.data_conflicts]
+    return context
 
 
 def _checkout_for_ai(audit: FullAuditData) -> dict | None:
@@ -89,6 +103,54 @@ def _checkout_for_ai(audit: FullAuditData) -> dict | None:
             "note": "Geen betrouwbare data over volgorde/velden/methodes — geen claims doen.",
         }
     return cf.model_dump(mode="json")
+
+
+def _revenue_leak_for_ai(audit: FullAuditData) -> dict | None:
+    """Strips the revenue-leak model down to what an AI skill can act on: signals,
+    status, priced ranges, conflicts and warnings. Drops the citation/basis/
+    exposure_share/uplift_low/uplift_high/funnel_stage bookkeeping that exists for
+    the report's own transparency, not for the model to reason about."""
+    rl = audit.revenue_leak
+    if not rl:
+        return None
+    return {
+        "data_source": rl.data_source,
+        "methodology_note": rl.methodology_note,
+        "total_monthly_loss_eur_low": rl.total_monthly_loss_eur_low,
+        "total_monthly_loss_eur_high": rl.total_monthly_loss_eur_high,
+        "cost_monthly_eur": rl.cost_monthly_eur,
+        "data_conflicts": [c.message_nl for c in rl.data_conflicts],
+        "model_warnings": [w.detail for w in rl.model_warnings],
+        "roi": rl.roi.model_dump(mode="json") if rl.roi else None,
+        "layers": [
+            {
+                "layer": layer.layer,
+                "name": layer.name,
+                "core_question": layer.core_question,
+                "kind": layer.kind,
+                "est_monthly_loss_eur_low": layer.est_monthly_loss_eur_low,
+                "est_monthly_loss_eur_high": layer.est_monthly_loss_eur_high,
+                "summary": layer.summary,
+                "good_signals": layer.good_signals,
+                "improvement_signals": layer.improvement_signals,
+                "metrics": [
+                    {
+                        "metric": m.metric,
+                        "signal": m.signal,
+                        "status": m.status,
+                        "priority": m.priority,
+                        "monthly_loss_eur_low": m.monthly_loss_eur_low,
+                        "monthly_loss_eur_high": m.monthly_loss_eur_high,
+                        "confidence": m.confidence,
+                        "verify_manually": m.verify_manually,
+                    }
+                    for m in layer.metrics
+                ],
+            }
+            for layer in rl.layers
+        ],
+        "ceo_triggers": [t.model_dump(mode="json") for t in rl.ceo_triggers if t.triggered],
+    }
 
 
 def _page_snapshot(page: dict, has_aggregate_rating: bool = False) -> dict:
@@ -251,7 +313,7 @@ def _top_summary_payload(audit: FullAuditData) -> str:
         "product_feeds": audit.product_feeds.model_dump(mode="json") if audit.product_feeds else None,
         "detected_stack": audit.detected_stack.model_dump(mode="json") if audit.detected_stack else None,
         "ad_traffic_impact": audit.ad_traffic_impact.model_dump(mode="json") if audit.ad_traffic_impact else None,
-        "revenue_leak": audit.revenue_leak.model_dump(mode="json") if audit.revenue_leak else None,
+        "revenue_leak": _revenue_leak_for_ai(audit),
         "business_context": _business_context(audit),
     }, ensure_ascii=False)
 
@@ -281,7 +343,7 @@ def _roadmap_payload(audit: FullAuditData, prior: dict) -> str:
         "dns_email": audit.dns_email.model_dump(mode="json") if audit.dns_email else None,
         "cost_analysis": audit.cost_analysis.model_dump(mode="json") if audit.cost_analysis else None,
         "ad_traffic_impact": audit.ad_traffic_impact.model_dump(mode="json") if audit.ad_traffic_impact else None,
-        "revenue_leak": audit.revenue_leak.model_dump(mode="json") if audit.revenue_leak else None,
+        "revenue_leak": _revenue_leak_for_ai(audit),
         "owned_channels": audit.owned_channels.model_dump(mode="json") if audit.owned_channels else None,
         "rich_results": audit.rich_results.model_dump(mode="json") if audit.rich_results else None,
         "business_context": _business_context(audit),

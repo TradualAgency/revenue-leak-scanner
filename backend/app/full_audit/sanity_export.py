@@ -390,6 +390,42 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
             "efficiencyMonthlyUpliftEur": audit.revenue_leak.efficiency_monthly_uplift_eur,
             "efficiencyAnnualUpliftEur": audit.revenue_leak.efficiency_annual_uplift_eur,
             "methodologyNote": audit.revenue_leak.methodology_note,
+            # --- funnel-model additions (Sanity's content lake is schemaless at
+            # write time, so these are safe to add; the Studio schema/template that
+            # RENDERS them is a separate, external concern — not covered here) ---
+            "modelVersion": audit.revenue_leak.model_version,
+            "totalMonthlyLossEurLow": audit.revenue_leak.total_monthly_loss_eur_low,
+            "totalMonthlyLossEurHigh": audit.revenue_leak.total_monthly_loss_eur_high,
+            "totalAnnualLossEurLow": audit.revenue_leak.total_annual_loss_eur_low,
+            "totalAnnualLossEurHigh": audit.revenue_leak.total_annual_loss_eur_high,
+            "costMonthlyEur": audit.revenue_leak.cost_monthly_eur,
+            "leakShareOfRevenueLow": audit.revenue_leak.leak_share_of_revenue_low,
+            "leakShareOfRevenueHigh": audit.revenue_leak.leak_share_of_revenue_high,
+            "funnel": {
+                "monthlySessions": audit.revenue_leak.funnel.monthly_sessions,
+                "conversionRate": audit.revenue_leak.funnel.conversion_rate,
+                "aovEur": audit.revenue_leak.funnel.aov_eur,
+                "monthlyRevenueEur": audit.revenue_leak.funnel.monthly_revenue_eur,
+                "operatorMonthlyRevenueEur": audit.revenue_leak.funnel.operator_monthly_revenue_eur,
+                "dataSource": audit.revenue_leak.funnel.data_source,
+                "methodologyNote": audit.revenue_leak.funnel.methodology_note,
+            } if audit.revenue_leak.funnel else None,
+            "dataConflicts": [
+                {
+                    "_key": _key(),
+                    "kind": c.kind,
+                    "operatorValueEur": c.operator_value_eur,
+                    "modelValueEur": c.model_value_eur,
+                    "ratio": c.ratio,
+                    "severity": c.severity,
+                    "messageNl": c.message_nl,
+                }
+                for c in audit.revenue_leak.data_conflicts
+            ],
+            "modelWarnings": [
+                {"_key": _key(), "kind": w.kind, "detail": w.detail}
+                for w in audit.revenue_leak.model_warnings
+            ],
             "layers": [
                 {
                     "_key": _key(),
@@ -398,6 +434,12 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                     "coreQuestion": l.core_question,
                     "estMonthlyLossEur": l.est_monthly_loss_eur,
                     "estAnnualLossEur": l.est_annual_loss_eur,
+                    "estMonthlyLossEurLow": l.est_monthly_loss_eur_low,
+                    "estMonthlyLossEurHigh": l.est_monthly_loss_eur_high,
+                    "estAnnualLossEurLow": l.est_annual_loss_eur_low,
+                    "estAnnualLossEurHigh": l.est_annual_loss_eur_high,
+                    "kind": l.kind,
+                    "unpricedFindingCount": l.unpriced_finding_count,
                     "metricCount": l.metric_count,
                     "leadsTo": l.leads_to,
                     "keySignals": l.key_signals,
@@ -414,6 +456,16 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                             "status": m.status,
                             "monthlyLossEur": m.monthly_loss_eur,
                             "annualLossEur": m.annual_loss_eur,
+                            "monthlyLossEurLow": m.monthly_loss_eur_low,
+                            "monthlyLossEurHigh": m.monthly_loss_eur_high,
+                            "annualLossEurLow": m.annual_loss_eur_low,
+                            "annualLossEurHigh": m.annual_loss_eur_high,
+                            "confidence": m.confidence,
+                            "kind": m.kind,
+                            "basis": m.basis,
+                            "citation": m.citation,
+                            "verifyManually": m.verify_manually,
+                            "pagesAffected": m.pages_affected,
                             "calculationNote": m.calculation_note,
                             "signal": m.signal,
                         }
@@ -443,6 +495,15 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                 "stackRebuildCostEur": audit.revenue_leak.roi.stack_rebuild_cost_eur,
                 "paybackMonths": audit.revenue_leak.roi.payback_months,
                 "yearOneNetReturnEur": audit.revenue_leak.roi.year_one_net_return_eur,
+                "monthlyLeakEurLow": audit.revenue_leak.roi.monthly_leak_eur_low,
+                "monthlyLeakEurHigh": audit.revenue_leak.roi.monthly_leak_eur_high,
+                "annualLeakEurLow": audit.revenue_leak.roi.annual_leak_eur_low,
+                "annualLeakEurHigh": audit.revenue_leak.roi.annual_leak_eur_high,
+                "paybackMonthsBest": audit.revenue_leak.roi.payback_months_best,
+                "paybackMonthsWorst": audit.revenue_leak.roi.payback_months_worst,
+                "yearOneNetReturnEurLow": audit.revenue_leak.roi.year_one_net_return_eur_low,
+                "yearOneNetReturnEurHigh": audit.revenue_leak.roi.year_one_net_return_eur_high,
+                "paysBackWithin12Months": audit.revenue_leak.roi.pays_back_within_12_months,
             } if audit.revenue_leak.roi else None,
         } if audit.revenue_leak else None,
 

@@ -38,6 +38,10 @@ export default function FullAuditIntake() {
   const [industry, setIndustry] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [annualRevenue, setAnnualRevenue] = useState("");
+  const [aov, setAov] = useState("");
+  const [monthlySessions, setMonthlySessions] = useState("");
+  const [conversionRate, setConversionRate] = useState("");
+  const [monthlyAdSpend, setMonthlyAdSpend] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +52,10 @@ export default function FullAuditIntake() {
     setError(null);
     try {
       const parsedRevenue = annualRevenue.trim() ? Number(annualRevenue.trim()) : undefined;
+      const parsedAov = aov.trim() ? Number(aov.trim()) : undefined;
+      const parsedSessions = monthlySessions.trim() ? Number(monthlySessions.trim()) : undefined;
+      const parsedCr = conversionRate.trim() ? Number(conversionRate.trim()) : undefined;
+      const parsedAdSpend = monthlyAdSpend.trim() ? Number(monthlyAdSpend.trim()) : undefined;
       const res = await createFullAudit({
         store_url: storeUrl.trim(),
         company_name: companyName.trim() || undefined,
@@ -55,6 +63,10 @@ export default function FullAuditIntake() {
         industry: industry.trim() || undefined,
         contact_email: contactEmail.trim() || undefined,
         estimated_annual_revenue_eur: parsedRevenue && parsedRevenue > 0 ? parsedRevenue : undefined,
+        aov_eur: parsedAov && parsedAov > 0 ? parsedAov : undefined,
+        monthly_sessions: parsedSessions && parsedSessions > 0 ? parsedSessions : undefined,
+        conversion_rate_pct: parsedCr && parsedCr > 0 ? parsedCr : undefined,
+        monthly_ad_spend_eur: parsedAdSpend && parsedAdSpend > 0 ? parsedAdSpend : undefined,
       });
       navigate(`/full-audit/${res.id}`);
     } catch (err) {
@@ -181,6 +193,67 @@ export default function FullAuditIntake() {
               <p className="text-xs text-gray-400">
                 Optioneel — schaalt alle revenue-leak bedragen naar de werkelijke omzet. Leeg laten = €108k/jaar default.
               </p>
+            </div>
+
+            <div className="border-t border-gray-100 pt-5 flex flex-col gap-5">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Business inputs (optioneel)</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Vervangt de aannames (AOV-bucket, 3% CVR, 15%-van-omzet ad spend) in het revenue-leak model door de echte cijfers van de klant.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Gem. bestelwaarde (AOV, EUR)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={aov}
+                    onChange={(e) => setAov(e.target.value)}
+                    placeholder="85"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Sessies per maand</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={monthlySessions}
+                    onChange={(e) => setMonthlySessions(e.target.value)}
+                    placeholder="15000"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Conversieratio (%)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.1"
+                    value={conversionRate}
+                    onChange={(e) => setConversionRate(e.target.value)}
+                    placeholder="2.3"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Ad spend per maand (EUR)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={monthlyAdSpend}
+                    onChange={(e) => setMonthlyAdSpend(e.target.value)}
+                    placeholder="3500"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+              </div>
             </div>
 
             <button

@@ -9,6 +9,17 @@
   --color-tradual-accent: #c5a96f;
   --color-tradual-danger: #EF4444;
   --color-tradual-bg: #FAFAF8;
+
+  --animate-marquee: marquee 40s linear infinite;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }
 
 html,
@@ -16,8 +27,21 @@ body {
   @apply bg-[#FAFAF8];
 }
 
+.marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-video {
+    display: none;
+  }
+
+  .marquee-track {
+    animation: none;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .marquee-track [data-marquee-clone] {
     display: none;
   }
 }

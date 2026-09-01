@@ -60,6 +60,10 @@ export interface FullAuditRequest {
   contact_email?: string;
   contact_person?: string;
   estimated_annual_revenue_eur?: number;
+  aov_eur?: number;
+  monthly_sessions?: number;
+  conversion_rate_pct?: number;
+  monthly_ad_spend_eur?: number;
 }
 
 export interface FullAuditCreateResponse {
@@ -168,6 +172,25 @@ export interface SeRankingTraffic {
   est_organic_traffic_value_usd: number;
 }
 
+export interface CompetitorBenchmark {
+  domain: string;
+  avg_keyword_position: number | null;
+  organic_keywords_count: number | null;
+  est_organic_traffic_value_usd: number | null;
+  intersecting_keywords: number | null;
+}
+
+export interface CompetitorBenchmarkReport {
+  store_domain: string;
+  store_organic_keywords_count: number | null;
+  store_est_organic_traffic_value_usd: number | null;
+  competitors: CompetitorBenchmark[];
+  location_code: number;
+  language_code: string;
+  data_source: "dataforseo";
+  notes: string | null;
+}
+
 export interface AdTrafficImpact {
   est_post_click_bounce_pct: number | null;
   bounce_baseline_pct: number;
@@ -182,6 +205,57 @@ export interface AdTrafficImpact {
 
 export type MetricStatus = "good" | "warning" | "critical" | "not-measured";
 
+// --- Funnel model additions ---------------------------------------------------------
+// `monthly_revenue_eur` (sessions x cr x aov) is what every revenue-leak euro figure
+// is computed against — NOT `estimated_annual_revenue_eur` from the audit form, which
+// is kept only as context and can disagree with the funnel (see DataConflict).
+export type Confidence = "high" | "medium" | "low";
+export type FunnelStage = "session" | "product_view" | "add_to_cart" | "reach_checkout" | "purchase";
+export type MetricKind = "revenue" | "cost" | "diagnostic" | "restatement";
+export type InputSource = "operator" | "seranking" | "derived" | "benchmark";
+
+export interface FunnelStageModel {
+  stage: FunnelStage;
+  entering: number;
+  exit_rate: number;
+  exit_rate_source: "benchmark" | "calibrated" | "measured";
+  citation: string | null;
+}
+
+export interface FunnelModel {
+  monthly_sessions: number;
+  conversion_rate: number;
+  aov_eur: number;
+  monthly_revenue_eur: number;
+  monthly_purchases: number;
+  monthly_ad_spend_eur: number;
+  mobile_share: number;
+  paid_share: number;
+  stages: FunnelStageModel[];
+  calibration_factor: number;
+  sessions_source: InputSource;
+  cr_source: InputSource;
+  aov_source: InputSource;
+  ad_spend_source: InputSource;
+  operator_monthly_revenue_eur: number | null;
+  data_source: DataSource;
+  methodology_note: string | null;
+}
+
+export interface DataConflict {
+  kind: "revenue_vs_funnel" | "ad_spend_vs_revenue";
+  operator_value_eur: number;
+  model_value_eur: number;
+  ratio: number;
+  severity: "warning" | "critical";
+  message_nl: string;
+}
+
+export interface ModelWarning {
+  kind: "stage_ceiling_bound" | "global_ceiling_bound" | "duplicate_finding" | "negative_payback";
+  detail: string;
+}
+
 export interface RevenueLeakMetric {
   metric: string;
   what_we_measure: string;
@@ -191,6 +265,22 @@ export interface RevenueLeakMetric {
   calculation_note: string;
   signal: string | null;
   status: MetricStatus;
+  // present only on reports computed by the funnel-model rewrite (model_version set)
+  monthly_loss_eur_low?: number | null;
+  monthly_loss_eur_high?: number | null;
+  annual_loss_eur_low?: number | null;
+  annual_loss_eur_high?: number | null;
+  finding_id?: string | null;
+  funnel_stage?: FunnelStage | null;
+  exposure_share?: number | null;
+  uplift_low?: number | null;
+  uplift_high?: number | null;
+  confidence?: Confidence;
+  kind?: MetricKind;
+  basis?: string | null;
+  citation?: string | null;
+  verify_manually?: boolean;
+  pages_affected?: string[];
 }
 
 export interface CeoTriggerKpi {
@@ -211,6 +301,15 @@ export interface RoiCalculation {
   stack_rebuild_cost_eur: number;
   payback_months: number | null;
   year_one_net_return_eur: number;
+  monthly_leak_eur_low?: number | null;
+  monthly_leak_eur_high?: number | null;
+  annual_leak_eur_low?: number | null;
+  annual_leak_eur_high?: number | null;
+  payback_months_best?: number | null;
+  payback_months_worst?: number | null;
+  year_one_net_return_eur_low?: number | null;
+  year_one_net_return_eur_high?: number | null;
+  pays_back_within_12_months?: boolean | null;
 }
 
 export interface RevenueLeakLayer {
@@ -227,6 +326,12 @@ export interface RevenueLeakLayer {
   good_signals: string[];
   improvement_signals: string[];
   readiness_score: number | null;
+  est_monthly_loss_eur_low?: number | null;
+  est_monthly_loss_eur_high?: number | null;
+  est_annual_loss_eur_low?: number | null;
+  est_annual_loss_eur_high?: number | null;
+  kind?: "revenue" | "cost" | "diagnostic" | "restatement" | "readiness";
+  unpriced_finding_count?: number;
 }
 
 export interface RevenueLeakReport {
@@ -241,6 +346,20 @@ export interface RevenueLeakReport {
   ceo_triggers: CeoTriggerKpi[];
   roi: RoiCalculation | null;
   data_source: DataSource;
+  // Present only when computed by the funnel-model rewrite. `model_version` is the
+  // frontend's branch key: absent/null means a pre-rewrite (v1) report stored before
+  // this schema existed — render it via the legacy single-value path, not ranges.
+  model_version?: string | null;
+  funnel?: FunnelModel | null;
+  data_conflicts?: DataConflict[];
+  model_warnings?: ModelWarning[];
+  total_monthly_loss_eur_low?: number | null;
+  total_monthly_loss_eur_high?: number | null;
+  total_annual_loss_eur_low?: number | null;
+  total_annual_loss_eur_high?: number | null;
+  cost_monthly_eur?: number | null;
+  leak_share_of_revenue_low?: number | null;
+  leak_share_of_revenue_high?: number | null;
 }
 
 export interface BloatItem {
@@ -255,6 +374,43 @@ export interface VendorDetection {
   name: string;
   confidence: "confirmed" | "probable" | "unknown";
   evidence: string | null;
+}
+
+export interface RetentionHealth {
+  subscription_detected: VendorDetection[];
+  loyalty_detected: VendorDetection[];
+  bundling_detected: VendorDetection[];
+  evidence: string | null;
+}
+
+export interface ShopifyAppsHealth {
+  app_extension_count: number | null;
+  app_extension_ids: string[];
+  evidence: string | null;
+  notes: string | null;
+}
+
+export interface ShopifyCatalogHealth {
+  detected: boolean | null;
+  product_count_sampled: number | null;
+  products_out_of_stock: number | null;
+  out_of_stock_ratio_pct: number | null;
+  products_missing_images: number | null;
+  products_missing_description: number | null;
+  collection_count_sampled: number | null;
+  theme_name: string | null;
+  theme_id: number | null;
+  evidence: string | null;
+}
+
+export interface EuComplianceHealth {
+  pdp_sampled_url: string | null;
+  has_strikethrough_price: boolean | null;
+  has_lowest_price_disclosure: boolean | null;
+  omnibus_risk_signal: boolean | null;
+  gpsr_responsible_person_mentioned: boolean | null;
+  evidence: string | null;
+  notes: string | null;
 }
 
 export interface DnsEmailHealth {
@@ -404,6 +560,15 @@ export interface FullAuditData {
     unused_javascript_kb: number | null;
     total_page_weight_kb: number | null;
     number_of_requests: number | null;
+    money_page_url: string | null;
+    money_page_type: "pdp" | "collection" | null;
+    money_page_lcp_ms: number | null;
+    money_page_lighthouse: {
+      performance: number | null;
+      accessibility: number | null;
+      best_practices: number | null;
+      seo: number | null;
+    } | null;
     notes: string | null;
   } | null;
   third_party_scripts: {
@@ -429,6 +594,7 @@ export interface FullAuditData {
     fields_in_address_form: number | null;
     guest_checkout_available: boolean | null;
     payment_methods_order: string[];
+    express_checkout_methods: string[];
     redirects_before_payment: number | null;
     errors_encountered: string[];
     total_checkout_time_seconds: number | null;
@@ -478,9 +644,14 @@ export interface FullAuditData {
     multi_region: MultiRegionHealth | null;
     marketplaces: MarketplacePresence | null;
   } | null;
+  shopify_catalog: ShopifyCatalogHealth | null;
+  shopify_apps: ShopifyAppsHealth | null;
+  retention: RetentionHealth | null;
+  eu_compliance: EuComplianceHealth | null;
   ad_traffic_impact: AdTrafficImpact | null;
   revenue_leak: RevenueLeakReport | null;
   seranking_traffic: SeRankingTraffic | null;
+  competitor_benchmark: CompetitorBenchmarkReport | null;
   ai_analysis: AiAnalysis | null;
   sanity_export: Record<string, unknown> | null;
 }

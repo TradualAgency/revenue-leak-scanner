@@ -1,0 +1,86 @@
+[
+  {
+    "name": "Recharge",
+    "slug": "recharge",
+    "category": "subscription",
+    "script_patterns": ["rechargeapps.com", "rechargepayments.com"],
+    "dom_patterns": ["recharge-subscription", "data-recharge"]
+  },
+  {
+    "name": "Skio",
+    "slug": "skio",
+    "category": "subscription",
+    "script_patterns": ["skio.com", "cdn.skio.com"],
+    "dom_patterns": ["skio-widget", "skio-subscription"]
+  },
+  {
+    "name": "Loop Subscriptions",
+    "slug": "loop-subscriptions",
+    "category": "subscription",
+    "script_patterns": ["loopsubscriptions.com", "cdn.loopwork.co"],
+    "dom_patterns": ["loop-subscription"]
+  },
+  {
+    "name": "Bold Subscriptions",
+    "slug": "bold-subscriptions",
+    "category": "subscription",
+    "script_patterns": ["boldapps.net/subscriptions", "bold-subscriptions"],
+    "dom_patterns": ["bold-subscription"]
+  },
+  {
+    "name": "Appstle Subscriptions",
+    "slug": "appstle-subscriptions",
+    "category": "subscription",
+    "script_patterns": ["appstle.com"],
+    "dom_patterns": ["appstle-subscription"]
+  },
+  {
+    "name": "LoyaltyLion",
+    "slug": "loyaltylion",
+    "category": "loyalty",
+    "script_patterns": ["loyaltylion.com", "cdn.loyaltylion.com"],
+    "dom_patterns": ["loyaltylion", "lion-widget"]
+  },
+  {
+    "name": "Smile.io",
+    "slug": "smile-io",
+    "category": "loyalty",
+    "script_patterns": ["cdn.smile.io", "productreviews.smile.io"],
+    "dom_patterns": ["smile-launcher", "smile-ui"]
+  },
+  {
+    "name": "Yotpo Loyalty",
+    "slug": "yotpo-loyalty",
+    "category": "loyalty",
+    "script_patterns": ["yotpo.com/loyalty", "swell.is"],
+    "dom_patterns": ["swell-widget"]
+  },
+  {
+    "name": "Rebuy",
+    "slug": "rebuy",
+    "category": "bundling",
+    "script_patterns": ["rebuyengine.com"],
+    "dom_patterns": ["rebuy-widget", "rebuy-smart-cart"]
+  },
+  {
+    "name": "Zipify",
+    "slug": "zipify",
+    "category": "bundling",
+    "script_patterns": ["zipify.com", "zipifypages.com"],
+    "dom_patterns": ["zipify-oco", "zipify-bundle"]
+  },
+  {
+    "name": "Bundle.app",
+    "slug": "bundle-app",
+    "category": "bundling",
+    "script_patterns": ["getbundle.app"],
+    "dom_patterns": ["bundle-widget"]
+  },
+  {
+    "name": "PickyStory",
+    "slug": "pickystory",
+    "category": "bundling",
+    "script_patterns": ["pickystory.com"],
+    "dom_patterns": ["pickystory-widget"]
+  }
+]

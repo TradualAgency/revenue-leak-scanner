@@ -40,6 +40,10 @@ async def create_full_audit(
         contact_person=body.contact_person,
         scan_level=body.scan_level,
         estimated_annual_revenue_eur=body.estimated_annual_revenue_eur,
+        aov_eur=body.aov_eur,
+        monthly_sessions=body.monthly_sessions,
+        conversion_rate_pct=body.conversion_rate_pct,
+        monthly_ad_spend_eur=body.monthly_ad_spend_eur,
         status="queued",
     )
     db.add(audit)

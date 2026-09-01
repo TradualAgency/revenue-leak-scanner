@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { getFullAudit, getFullAuditSanityExport, getFullAuditStatus } from "~/lib/api";
+import { eur, eurRange, severityByShare } from "~/lib/format";
 import type {
   AccessibilityHealth,
   AdTrafficImpact,
   AiAnalysis,
   AiBloatInsight,
+  DataConflict,
   MetricStatus,
+  ModelWarning,
   RevenueLeakLayer,
   RevenueLeakMetric,
   RevenueLeakReport,
@@ -269,6 +272,28 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
         {data.unused_javascript_kb != null && <span className="text-gray-500">Unused JS: <b className="text-red-500">{data.unused_javascript_kb}KB</b></span>}
         {data.number_of_requests != null && <span className="text-gray-500">Requests: <b className="text-gray-800">{data.number_of_requests}</b></span>}
       </div>
+      {data.money_page_url && (
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            {data.money_page_type === "pdp" ? "Productpagina" : "Collectiepagina"} (echte omzetpagina, niet de homepage)
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-2">
+            {data.money_page_lcp_ms != null && (
+              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div className={`text-lg font-semibold ${data.money_page_lcp_ms > 4000 ? "text-red-500" : data.money_page_lcp_ms > 2500 ? "text-yellow-600" : "text-emerald-600"}`}>{(data.money_page_lcp_ms / 1000).toFixed(1)}s</div>
+                <div className="text-xs text-gray-400 mt-0.5">LCP</div>
+              </div>
+            )}
+            {data.money_page_lighthouse?.performance != null && (
+              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div className={`text-lg font-semibold ${data.money_page_lighthouse.performance < 50 ? "text-red-500" : data.money_page_lighthouse.performance < 90 ? "text-yellow-600" : "text-emerald-600"}`}>{data.money_page_lighthouse.performance}</div>
+                <div className="text-xs text-gray-400 mt-0.5">Performance</div>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 font-mono truncate">{data.money_page_url}</p>
+        </div>
+      )}
       {data.notes && <p className="text-xs text-gray-400 mt-3 italic">{data.notes}</p>}
     </SectionCard>
   );
@@ -367,9 +392,15 @@ function TrackingSection({ data }: { data: NonNullable<FullAuditData["tracking_d
 function CheckoutSection({ data }: { data: NonNullable<FullAuditData["checkout_flow"]> }) {
   return (
     <SectionCard title="Checkout Flow (mystery shop)">
-      <p className="text-xs text-gray-500 italic mb-4">
-        We hebben de checkout van A tot Z doorlopen zonder af te rekenen.
-      </p>
+      {data.probe_status === "unreachable" ? (
+        <p className="text-xs text-amber-600 mb-4">
+          Checkout niet bereikbaar voor outside-only meting — geen bestelbaar product gevonden, of add-to-cart/checkout is mislukt.
+        </p>
+      ) : (
+        <p className="text-xs text-gray-500 italic mb-4">
+          Product daadwerkelijk in de winkelmand gelegd en doorgestroomd naar checkout — zonder af te rekenen.
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {data.fields_in_address_form != null && (
           <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
@@ -399,6 +430,9 @@ function CheckoutSection({ data }: { data: NonNullable<FullAuditData["checkout_f
       )}
       {data.payment_methods_order.length > 0 && (
         <KV label="Betaalmethoden (volgorde)" value={data.payment_methods_order.join(", ")} />
+      )}
+      {data.express_checkout_methods.length > 0 && (
+        <KV label="Express checkout" value={data.express_checkout_methods.join(", ")} />
       )}
       {data.observed_friction.length > 0 && (
         <div className="mt-3">
@@ -657,11 +691,74 @@ function MetricStatusIcon({ status }: { status: MetricStatus }) {
   return <span className="text-white/20 text-xs shrink-0">–</span>;
 }
 
-function RevenueLeakLayerRow({ layer }: { layer: RevenueLeakLayer }) {
+// --- v1/v2 compatibility helpers ---------------------------------------------------
+// Pre-rewrite (v1) reports only carry a single `*_loss_eur` value; post-rewrite (v2)
+// reports carry a real low/high range. Returning a range either way (low === high
+// for v1) lets every render site use the same range-aware formatting — `eurRange`
+// collapses a v1 pair back down to a single value automatically.
+function metricRange(m: RevenueLeakMetric): { low: number | null; high: number | null } {
+  if (m.monthly_loss_eur_low != null && m.monthly_loss_eur_high != null) {
+    return { low: m.monthly_loss_eur_low, high: m.monthly_loss_eur_high };
+  }
+  return { low: m.monthly_loss_eur ?? null, high: m.monthly_loss_eur ?? null };
+}
+function layerRange(l: RevenueLeakLayer): { low: number | null; high: number | null } {
+  if (l.est_monthly_loss_eur_low != null && l.est_monthly_loss_eur_high != null) {
+    return { low: l.est_monthly_loss_eur_low, high: l.est_monthly_loss_eur_high };
+  }
+  return { low: l.est_monthly_loss_eur ?? null, high: l.est_monthly_loss_eur ?? null };
+}
+function layerAnnualRange(l: RevenueLeakLayer): { low: number | null; high: number | null } {
+  if (l.est_annual_loss_eur_low != null && l.est_annual_loss_eur_high != null) {
+    return { low: l.est_annual_loss_eur_low, high: l.est_annual_loss_eur_high };
+  }
+  return { low: l.est_annual_loss_eur ?? null, high: l.est_annual_loss_eur ?? null };
+}
+function reportMonthlyRange(data: RevenueLeakReport): { low: number; high: number } {
+  if (data.total_monthly_loss_eur_low != null && data.total_monthly_loss_eur_high != null) {
+    return { low: data.total_monthly_loss_eur_low, high: data.total_monthly_loss_eur_high };
+  }
+  const v = data.total_monthly_loss_eur || 0;
+  return { low: v, high: v };
+}
+
+function DataConflictBanner({ conflicts }: { conflicts: DataConflict[] }) {
+  if (conflicts.length === 0) return null;
+  return (
+    <div className="space-y-2 mb-4">
+      {conflicts.map((c, i) => (
+        <div
+          key={i}
+          className={`border rounded-lg p-3 ${c.severity === "critical" ? "border-red-500/40 bg-red-500/10" : "border-amber-500/40 bg-amber-500/10"}`}
+        >
+          <p className={`text-[11px] font-semibold uppercase tracking-wide mb-1 ${c.severity === "critical" ? "text-red-400" : "text-amber-400"}`}>
+            Tegenstrijdige invoer — {c.ratio.toFixed(1)}x verschil
+          </p>
+          <p className="text-xs text-white/60 leading-relaxed">{c.message_nl}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModelWarningsList({ warnings }: { warnings: ModelWarning[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="mt-3 space-y-1">
+      {warnings.map((w, i) => (
+        <p key={i} className="text-[10px] text-amber-400/70 leading-relaxed">⚠ {w.detail}</p>
+      ))}
+    </div>
+  );
+}
+
+function RevenueLeakLayerRow({ layer, funnelRevenue }: { layer: RevenueLeakLayer; funnelRevenue: number | null }) {
   const [open, setOpen] = useState(false);
   const isLayer5 = layer.layer === 5;
-  const hasLoss = layer.est_monthly_loss_eur != null;
+  const { low: layerLow, high: layerHigh } = layerRange(layer);
+  const hasLoss = layerLow != null && layerHigh != null;
   const isNa = !hasLoss && !isLayer5;
+  const kind = layer.kind ?? "revenue";
   const hasMetrics = layer.metrics && layer.metrics.length > 0;
   const hasSignals = (layer.good_signals?.length || 0) + (layer.improvement_signals?.length || 0) > 0;
   return (
@@ -694,10 +791,10 @@ function RevenueLeakLayerRow({ layer }: { layer: RevenueLeakLayer }) {
               </div>
             ) : <span className="text-xs text-white/25 italic">n.v.t.</span>
           ) : isNa ? (
-            <span className="text-xs text-white/25 italic">n.v.t.</span>
+            <span className="text-xs text-white/25 italic">{kind === "diagnostic" ? "diagnose" : kind === "restatement" ? "herformulering" : "n.v.t."}</span>
           ) : (
-            <span className={`text-base font-bold ${(layer.est_monthly_loss_eur || 0) > 1000 ? "text-red-400" : (layer.est_monthly_loss_eur || 0) > 0 ? "text-orange-400" : "text-white/30"}`}>
-              {(layer.est_monthly_loss_eur || 0) === 0 ? "—" : `€${(layer.est_monthly_loss_eur || 0).toLocaleString("nl-NL")}`}
+            <span className={`text-base font-bold ${kind === "cost" ? "text-amber-400" : (layerHigh || 0) > 1000 ? "text-red-400" : (layerHigh || 0) > 0 ? "text-orange-400" : "text-white/30"}`}>
+              {(layerHigh || 0) === 0 ? "—" : eurRange(layerLow, layerHigh)}
             </span>
           )}
         </td>
@@ -707,13 +804,23 @@ function RevenueLeakLayerRow({ layer }: { layer: RevenueLeakLayer }) {
           ) : isNa ? (
             <span className="text-xs text-white/25 italic">n.v.t.</span>
           ) : (
-            <span className={`text-sm font-medium ${(layer.est_annual_loss_eur || 0) > 12000 ? "text-red-300/70" : "text-white/40"}`}>
-              {(layer.est_annual_loss_eur || 0) === 0 ? "—" : `€${(layer.est_annual_loss_eur || 0).toLocaleString("nl-NL")}`}
-            </span>
+            (() => {
+              const { low: aLow, high: aHigh } = layerAnnualRange(layer);
+              return (
+                <span className={`text-sm font-medium ${(aHigh || 0) > 12000 ? "text-red-300/70" : "text-white/40"}`}>
+                  {(aHigh || 0) === 0 ? "—" : eurRange(aLow, aHigh)}
+                </span>
+              );
+            })()
           )}
         </td>
         <td className="py-3 pr-4 text-center">
-          <span className="text-xs text-white/30">{layer.metric_count}</span>
+          <span className="text-xs text-white/30">
+            {layer.metric_count}
+            {layer.unpriced_finding_count != null && layer.unpriced_finding_count > 0 && (
+              <span className="text-slate-400"> (+{layer.unpriced_finding_count} te verifiëren)</span>
+            )}
+          </span>
         </td>
         <td className="py-3">
           <span className="text-xs text-[#c5a96f]/70 whitespace-nowrap">{layer.leads_to}</span>
@@ -770,14 +877,24 @@ function RevenueLeakLayerRow({ layer }: { layer: RevenueLeakLayer }) {
                 </div>
               </td>
               <td className="py-2 pr-4 tabular-nums">
-                {m.monthly_loss_eur != null ? (
-                  <span className={`text-xs font-semibold ${m.monthly_loss_eur > 500 ? "text-red-400/80" : m.monthly_loss_eur > 0 ? "text-orange-400/80" : "text-emerald-400/50"}`}>
-                    {m.monthly_loss_eur === 0 ? "✓ geen verlies" : `€${m.monthly_loss_eur.toLocaleString("nl-NL")}`}
-                  </span>
-                ) : <span className="text-[10px] text-white/20 italic">strategisch</span>}
+                {m.verify_manually ? (
+                  <span className="text-[10px] text-slate-400 italic border border-slate-500/30 rounded px-1.5 py-0.5">handmatig verifiëren</span>
+                ) : (() => {
+                  const { low, high } = metricRange(m);
+                  if (low == null || high == null) {
+                    return <span className="text-[10px] text-white/20 italic">{m.kind === "diagnostic" ? "diagnose" : m.kind === "restatement" ? "herformulering" : "strategisch"}</span>;
+                  }
+                  const share = funnelRevenue ? high / funnelRevenue : null;
+                  const severity = severityByShare(share, 0.01, 0.03);
+                  return (
+                    <span className={`text-xs font-semibold ${severity === "critical" ? "text-red-400/80" : severity === "warning" ? "text-orange-400/80" : "text-emerald-400/50"}`}>
+                      {high === 0 ? "✓ geen verlies" : eurRange(low, high)}
+                    </span>
+                  );
+                })()}
               </td>
               <td colSpan={2} className="py-2 pr-3">
-                <p className="text-[10px] text-white/25 leading-snug">{m.calculation_note}</p>
+                <p className="text-[10px] text-white/25 leading-snug">{m.basis || m.calculation_note}</p>
               </td>
             </tr>
           ))}
@@ -830,46 +947,81 @@ function CeoTriggersSection({ triggers }: { triggers: RevenueLeakReport["ceo_tri
 }
 
 function RevenueLeakSection({ data }: { data: RevenueLeakReport }) {
-  const total = data.total_monthly_loss_eur || 0;
-  const totalAnnual = data.total_annual_loss_eur || 0;
+  const isV2 = data.model_version != null;
+  const { low: totalLow, high: totalHigh } = reportMonthlyRange(data);
+  const totalAnnual = data.total_annual_loss_eur_low != null && data.total_annual_loss_eur_high != null
+    ? { low: data.total_annual_loss_eur_low, high: data.total_annual_loss_eur_high }
+    : { low: data.total_annual_loss_eur || 0, high: data.total_annual_loss_eur || 0 };
+  const funnelRevenue = data.funnel?.monthly_revenue_eur ?? null;
+  const conflicts = data.data_conflicts ?? [];
+  const warnings = data.model_warnings ?? [];
+
+  // v1 legacy split (efficiency-as-upside framing) — kept only for reports computed
+  // before the rewrite. v2 reports set `efficiency_monthly_uplift_eur` to a fixed
+  // 0.0 (layer 4 no longer claims separate upside), so this split would otherwise
+  // always render a redundant "+€0 extra potentieel" line.
   const direct = data.direct_monthly_loss_eur ?? null;
   const efficiency = data.efficiency_monthly_uplift_eur ?? null;
-  const showSplit = direct != null && efficiency != null;
+  const showLegacySplit = !isV2 && direct != null && efficiency != null && efficiency > 0;
+
   return (
     <SectionCard title="Revenue Leak — Wat kost het je?" dark>
-      {total > 0 && (
+      <DataConflictBanner conflicts={conflicts} />
+      {totalHigh > 0 && (
         <div className="mb-6 pb-5 border-b border-white/10">
-          {showSplit ? (
+          {showLegacySplit ? (
             <div className="flex flex-col gap-1.5 mb-3">
               <div className="flex items-baseline justify-between pb-1">
                 <span className="text-xs font-semibold text-white/60">Directe lek nu (Laag 1+2+3)</span>
-                <span className="text-xl font-bold text-red-400">€{(direct || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+                <span className="text-xl font-bold text-red-400">{eur(direct)}<span className="text-xs font-normal text-white/30">/mnd</span></span>
               </div>
               <div className="flex items-baseline justify-between pt-2 border-t border-white/10 mt-1">
                 <span className="text-xs text-white/40">+ extra potentieel bij snellere winkel (Laag 4 — géén huidig verlies)</span>
-                <span className="text-base font-semibold text-yellow-400">€{(efficiency || 0).toLocaleString("nl-NL")}<span className="text-xs font-normal text-white/30">/mnd</span></span>
+                <span className="text-base font-semibold text-yellow-400">{eur(efficiency)}<span className="text-xs font-normal text-white/30">/mnd</span></span>
               </div>
             </div>
           ) : (
-            <div className="flex gap-6">
+            <div className="flex flex-wrap gap-6">
               <div>
-                <p className="text-3xl font-bold text-red-400">€{total.toLocaleString("nl-NL")}</p>
-                <p className="text-xs text-white/40 mt-1">geschat verlies per maand</p>
+                <p className="text-3xl font-bold text-red-400">{eurRange(totalLow, totalHigh)}</p>
+                <p className="text-xs text-white/40 mt-1">geschat verlies per maand{isV2 ? " (laag 1+3)" : ""}</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-red-300/70">€{totalAnnual.toLocaleString("nl-NL")}</p>
+                <p className="text-3xl font-bold text-red-300/70">{eurRange(totalAnnual.low, totalAnnual.high)}</p>
                 <p className="text-xs text-white/40 mt-1">per jaar</p>
               </div>
+              {isV2 && data.cost_monthly_eur != null && data.cost_monthly_eur > 0 && (
+                <div>
+                  <p className="text-3xl font-bold text-amber-400">{eur(data.cost_monthly_eur)}</p>
+                  <p className="text-xs text-white/40 mt-1">tool-kosten per maand (laag 2)</p>
+                </div>
+              )}
             </div>
           )}
           {data.roi && (
             <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-white/5 text-xs text-white/40">
-              {data.roi.payback_months != null && (
-                <span>Terugverdientijd Stack Rebuild: <b className="text-white/70">{data.roi.payback_months} maanden</b></span>
-              )}
-              {data.roi.year_one_net_return_eur > 0 && (
-                <span>Netto jaar 1: <b className="text-emerald-400">€{data.roi.year_one_net_return_eur.toLocaleString("nl-NL")}</b></span>
-              )}
+              {(() => {
+                const best = data.roi.payback_months_best ?? data.roi.payback_months;
+                const worst = data.roi.payback_months_worst ?? data.roi.payback_months;
+                if (best == null || worst == null) return null;
+                return (
+                  <span>
+                    Terugverdientijd Stack Rebuild:{" "}
+                    <b className="text-white/70">{best === worst ? `${best}` : `${best}–${worst}`} maanden</b>
+                  </span>
+                );
+              })()}
+              {(() => {
+                const low = data.roi.year_one_net_return_eur_low ?? data.roi.year_one_net_return_eur;
+                const high = data.roi.year_one_net_return_eur_high ?? data.roi.year_one_net_return_eur;
+                if (high <= 0) return null;
+                return (
+                  <span>
+                    Netto jaar 1: <b className={low < 0 ? "text-amber-400" : "text-emerald-400"}>{eurRange(low, high)}</b>
+                    {low < 0 && " (bij ondergrens niet terugverdiend)"}
+                  </span>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -885,13 +1037,17 @@ function RevenueLeakSection({ data }: { data: RevenueLeakReport }) {
           </thead>
           <tbody>
             {data.layers.map((layer) => (
-              <RevenueLeakLayerRow key={layer.layer} layer={layer} />
+              <RevenueLeakLayerRow key={layer.layer} layer={layer} funnelRevenue={funnelRevenue} />
             ))}
           </tbody>
         </table>
       </div>
+      <ModelWarningsList warnings={warnings} />
       {data.methodology_note && (
         <p className="text-xs text-white/20 italic mt-4">{data.methodology_note}</p>
+      )}
+      {data.funnel?.methodology_note && (
+        <p className="text-xs text-white/20 italic mt-1">{data.funnel.methodology_note}</p>
       )}
       {data.ceo_triggers && data.ceo_triggers.length > 0 && (
         <CeoTriggersSection triggers={data.ceo_triggers} />
@@ -1267,6 +1423,153 @@ function ProductFeedsSection({ data }: { data: NonNullable<FullAuditData["produc
   );
 }
 
+function CompetitorBenchmarkSection({ data }: { data: NonNullable<FullAuditData["competitor_benchmark"]> }) {
+  const fmtNum = (n: number | null) => (n == null ? "—" : Math.round(n).toLocaleString("nl-NL"));
+  return (
+    <SectionCard title="Concurrentie-benchmark" dark>
+      <p className="text-xs text-white/40 mb-4">
+        Organische zoekprestatie t.o.v. de dichtstbijzijnde concurrenten (via DataForSEO, {data.language_code.toUpperCase()}-markt) — {data.notes}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-white/10">
+              {["Domein", "Org. zoekwoorden", "Geschatte verkeerswaarde ($)", "Gedeelde zoekwoorden"].map((h) => (
+                <th key={h} className="text-left py-2 pr-3 text-white/30 font-medium uppercase tracking-wide text-[10px]">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-white/5 bg-[#c5a96f]/5">
+              <td className="py-2 pr-3 font-semibold text-[#c5a96f]">{data.store_domain} (jij)</td>
+              <td className="py-2 pr-3 tabular-nums text-white/80">{fmtNum(data.store_organic_keywords_count)}</td>
+              <td className="py-2 pr-3 tabular-nums text-white/80">{fmtNum(data.store_est_organic_traffic_value_usd)}</td>
+              <td className="py-2 pr-3 text-white/30">—</td>
+            </tr>
+            {data.competitors.map((c) => (
+              <tr key={c.domain} className="border-b border-white/5 last:border-0">
+                <td className="py-2 pr-3 text-white/70">{c.domain}</td>
+                <td className="py-2 pr-3 tabular-nums text-white/60">{fmtNum(c.organic_keywords_count)}</td>
+                <td className="py-2 pr-3 tabular-nums text-white/60">{fmtNum(c.est_organic_traffic_value_usd)}</td>
+                <td className="py-2 pr-3 tabular-nums text-white/60">{fmtNum(c.intersecting_keywords)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data.competitors.length === 0 && (
+        <p className="text-xs text-white/30 mt-3">Geen vergelijkbare concurrenten gevonden voor dit domein.</p>
+      )}
+    </SectionCard>
+  );
+}
+
+function ShopifyPlatformSection({
+  catalog,
+  apps,
+}: {
+  catalog: FullAuditData["shopify_catalog"];
+  apps: FullAuditData["shopify_apps"];
+}) {
+  return (
+    <SectionCard title="Shopify Platform Diepte">
+      {catalog && (
+        <div className="mb-5 pb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Catalogus</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
+            {catalog.product_count_sampled != null && (
+              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div className="text-lg font-semibold text-gray-900">{catalog.product_count_sampled}</div>
+                <div className="text-xs text-gray-400">Producten (sample)</div>
+              </div>
+            )}
+            {catalog.out_of_stock_ratio_pct != null && (
+              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div className={`text-lg font-semibold ${catalog.out_of_stock_ratio_pct > 15 ? "text-red-500" : "text-gray-900"}`}>{catalog.out_of_stock_ratio_pct}%</div>
+                <div className="text-xs text-gray-400">Uitverkocht</div>
+              </div>
+            )}
+            {!!catalog.products_missing_images && (
+              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div className="text-lg font-semibold text-amber-600">{catalog.products_missing_images}</div>
+                <div className="text-xs text-gray-400">Zonder foto</div>
+              </div>
+            )}
+            {!!catalog.products_missing_description && (
+              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div className="text-lg font-semibold text-amber-600">{catalog.products_missing_description}</div>
+                <div className="text-xs text-gray-400">Zonder omschrijving</div>
+              </div>
+            )}
+          </div>
+          {catalog.theme_name && <KV label="Thema" value={catalog.theme_name} />}
+          {catalog.collection_count_sampled != null && <KV label="Collecties (sample)" value={`${catalog.collection_count_sampled}`} />}
+        </div>
+      )}
+      {apps && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Apps</p>
+          {apps.app_extension_count != null && apps.app_extension_count > 0 ? (
+            <KV label="Gedetecteerde app-extensies" value={`${apps.app_extension_count}`} />
+          ) : (
+            <p className="text-sm text-gray-500">Geen app-extensies gedetecteerd</p>
+          )}
+          {apps.notes && <p className="text-xs text-gray-400 mt-2 italic">{apps.notes}</p>}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function RetentionComplianceSection({
+  retention,
+  compliance,
+}: {
+  retention: FullAuditData["retention"];
+  compliance: FullAuditData["eu_compliance"];
+}) {
+  const hasRetention = !!retention && (
+    retention.subscription_detected.length > 0 ||
+    retention.loyalty_detected.length > 0 ||
+    retention.bundling_detected.length > 0
+  );
+  return (
+    <SectionCard title="Retentie & EU Compliance">
+      <div className="mb-5 pb-5 border-b border-gray-100 last:border-0 last:pb-0 last:mb-0">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Retentie-infrastructuur</p>
+        {hasRetention && retention ? (
+          <>
+            <VendorList vendors={retention.subscription_detected} />
+            <VendorList vendors={retention.loyalty_detected} />
+            <VendorList vendors={retention.bundling_detected} />
+          </>
+        ) : (
+          <p className="text-sm text-gray-500">Geen abonnement-, loyalty- of bundeltool gedetecteerd</p>
+        )}
+      </div>
+      {compliance && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">EU Compliance-signalen</p>
+          <p className="text-[11px] text-gray-400 mb-2 italic">Heuristische signalen, geen juridisch oordeel.</p>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {compliance.omnibus_risk_signal != null && (
+              <Pill
+                label={compliance.omnibus_risk_signal ? "Omnibus: mogelijk risico" : "Omnibus: geen signaal"}
+                tone={compliance.omnibus_risk_signal ? "bad" : "good"}
+              />
+            )}
+            {compliance.gpsr_responsible_person_mentioned != null && (
+              <Pill label="GPSR: verantwoordelijke partij vermeld" tone="good" />
+            )}
+          </div>
+          {compliance.evidence && <p className="text-xs text-gray-500">{compliance.evidence}</p>}
+          {compliance.notes && <p className="text-[11px] text-gray-400 mt-2 italic">{compliance.notes}</p>}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 function DetectedStackSection({ data }: { data: NonNullable<FullAuditData["detected_stack"]> }) {
   const { site_search, shipping, returns, multi_region, marketplaces } = data;
   return (
@@ -1602,6 +1905,7 @@ export default function FullAuditResults() {
                   <RevenueLeakSection data={auditData.revenue_leak} />
                 </>
               )}
+              {auditData.competitor_benchmark && <CompetitorBenchmarkSection data={auditData.competitor_benchmark} />}
               {auditData.third_party_scripts && <ThirdPartySection data={auditData.third_party_scripts} />}
               {auditData.tracking_data_quality && <TrackingSection data={auditData.tracking_data_quality} />}
               {auditData.checkout_flow && <CheckoutSection data={auditData.checkout_flow} />}
@@ -1614,6 +1918,12 @@ export default function FullAuditResults() {
               {auditData.server_side_tracking && <ServerSideTrackingSection data={auditData.server_side_tracking} />}
               {auditData.product_feeds && <ProductFeedsSection data={auditData.product_feeds} />}
               {auditData.detected_stack && <DetectedStackSection data={auditData.detected_stack} />}
+              {(auditData.shopify_catalog || auditData.shopify_apps) && (
+                <ShopifyPlatformSection catalog={auditData.shopify_catalog} apps={auditData.shopify_apps} />
+              )}
+              {(auditData.retention || auditData.eu_compliance) && (
+                <RetentionComplianceSection retention={auditData.retention} compliance={auditData.eu_compliance} />
+              )}
               {auditData.accessibility && <AccessibilitySection data={auditData.accessibility} />}
               {auditData.cro_observations.length > 0 && <CroSection items={auditData.cro_observations} />}
               {(auditData.bloat_what_must_go.length > 0 || auditData.ai_analysis?.bloat) && <BloatSection items={auditData.bloat_what_must_go} aiInsight={auditData.ai_analysis?.bloat} />}

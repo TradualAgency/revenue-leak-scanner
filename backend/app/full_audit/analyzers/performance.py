@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from urllib.parse import urlparse
 
 import aiohttp
 
 from app.config import settings
+from app.full_audit.page_sampling import sample_pages_by_type
 from app.full_audit.schemas import LighthouseScores, MobileCWV, Performance, Rating
 
 logger = logging.getLogger(__name__)
@@ -43,29 +45,57 @@ def _cls_rating_from_val(cls: float | None) -> Rating | None:
     return "poor"
 
 
-async def _call_psi(url: str, strategy: str = "mobile") -> dict | None:
-    if not settings.PAGESPEED_API_KEY:
-        return None
+async def _no_psi_call() -> None:
+    """Placeholder awaitable for asyncio.gather when there's no money page to measure."""
+    return None
+
+
+_ALL_CATEGORIES = ["performance", "accessibility", "best-practices", "seo"]
+
+
+async def _call_psi_once(url: str, strategy: str, categories: list[str], timeout_s: float) -> dict | None:
     params = {
         "url": url,
         "strategy": strategy,
         "key": settings.PAGESPEED_API_KEY,
-        "category": ["performance", "accessibility", "best-practices", "seo"],
+        "category": categories,
     }
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 PAGESPEED_API_URL,
                 params=params,
-                timeout=aiohttp.ClientTimeout(total=45),
+                # Each extra Lighthouse category roughly multiplies audit time; a slow
+                # site can genuinely take well over a minute even for one category. A
+                # tight timeout here silently turns "this site is slow" into "we
+                # measured nothing", which is worse than waiting.
+                timeout=aiohttp.ClientTimeout(total=timeout_s),
             ) as resp:
                 if resp.status != 200:
                     logger.warning("PSI API returned %s for %s (%s)", resp.status, url, strategy)
                     return None
                 return await resp.json()
     except Exception as exc:
-        logger.warning("PSI API error for %s: %s", url, exc)
+        logger.warning("PSI API error for %s: %s (%s)", url, exc, type(exc).__name__)
         return None
+
+
+async def _call_psi(
+    url: str, strategy: str = "mobile", categories: list[str] | None = None, timeout_s: float = 90,
+) -> dict | None:
+    if not settings.PAGESPEED_API_KEY:
+        return None
+    cats = categories if categories is not None else _ALL_CATEGORIES
+
+    result = await _call_psi_once(url, strategy, cats, timeout_s)
+    if result is not None:
+        return result
+
+    # Slow sites are exactly where PSI is most likely to time out or 500 on a given
+    # attempt — retrying once catches the transient cases without doubling latency for
+    # sites that succeed on the first try.
+    logger.info("Retrying PSI call for %s (%s)", url, strategy)
+    return await _call_psi_once(url, strategy, cats, timeout_s)
 
 
 def _cwv_from_field_data(data: dict) -> MobileCWV:
@@ -235,8 +265,21 @@ def _third_party_summary_by_domain(data: dict) -> dict[str, dict]:
 
 
 async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Performance, dict[str, dict]]:
-    mobile_data = await _call_psi(store_url, strategy="mobile")
-    desktop_data = await _call_psi(store_url, strategy="desktop")
+    money_page = _pick_money_page(pages)
+
+    # Three independent PSI calls (each a full Lighthouse run, now allowed up to 90s) —
+    # run them concurrently rather than sequentially, or a single slow site could push
+    # this analyzer's worst case to 3x the per-call timeout.
+    calls = [
+        _call_psi(store_url, strategy="mobile"),
+        # Only `.performance` is ever read from the desktop and money-page results
+        # (confirmed: no code reads their accessibility/best-practices/seo scores) —
+        # requesting just that category keeps these two calls fast even on slow sites,
+        # so they don't become the bottleneck next to the necessarily-full mobile call.
+        _call_psi(store_url, strategy="desktop", categories=["performance"]),
+        _call_psi(money_page[0], strategy="mobile", categories=["performance"]) if money_page else _no_psi_call(),
+    ]
+    mobile_data, desktop_data, money_page_data = await asyncio.gather(*calls)
 
     mobile_cwv: MobileCWV | None = None
     lighthouse: LighthouseScores | None = None
@@ -265,16 +308,10 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Perfor
         speed_index = _speed_index_ms(mobile_data)
         tti = _tti_ms(mobile_data)
     else:
-        # Fallback from scraper load times
-        load_times = [p["load_time_ms"] for p in pages if p.get("load_time_ms", 0) > 0]
-        if load_times:
-            avg_ms = sum(load_times) / len(load_times)
-            estimated_lcp = avg_ms * 8
-            lcp_rating: Rating = (
-                "good" if estimated_lcp < 2500 else "needs-improvement" if estimated_lcp < 4000 else "poor"
-            )
-            mobile_cwv = MobileCWV(lcp_ms=estimated_lcp, lcp_rating=lcp_rating)
-        notes = "PageSpeed Insights API key not configured — CWV estimated from TTFB only."
+        # No PSI data — the scraper's own fetch time is TTFB, not a browser page load.
+        # Scaling it by a guessed multiplier presented a fabricated LCP as a measurement
+        # (the same issue fixed in the free-scan's pagespeed.py). Leave CWV unmeasured.
+        notes = "PageSpeed Insights API key niet geconfigureerd of API-aanroep mislukt — Core Web Vitals niet gemeten."
 
     desktop_lighthouse: LighthouseScores | None = None
     if desktop_data:
@@ -286,6 +323,12 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Perfor
     # Real per-entity weight/blocking-time from the mobile run's own third-party audit —
     # used downstream to replace the synthetic size/blocking constants in third_party.py.
     third_party_summary = _third_party_summary_by_domain(mobile_data) if mobile_data else {}
+
+    money_page_url, money_page_type, money_page_lcp, money_page_lighthouse = _money_page_result(
+        money_page[0] if money_page else None,
+        money_page[1] if money_page else None,
+        money_page_data,
+    )
 
     performance = Performance(
         mobile=mobile_cwv,
@@ -300,6 +343,41 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Perfor
         unused_javascript_kb=unused_js,
         total_page_weight_kb=page_weight,
         number_of_requests=req_count,
+        money_page_url=money_page_url,
+        money_page_type=money_page_type,  # type: ignore[arg-type]
+        money_page_lcp_ms=money_page_lcp,
+        money_page_lighthouse=money_page_lighthouse,
         notes=notes,
     )
     return performance, third_party_summary
+
+
+def _pick_money_page(pages: list[dict]) -> tuple[str, str] | None:
+    """Pick an actual revenue page to measure — a PDP if one was scraped, else a
+    collection page. Everything else in this module measures the homepage, which is
+    commercially the least relevant page on the site."""
+    sampled = sample_pages_by_type(pages)
+    page = sampled.get("pdp")
+    page_type = "pdp"
+    if page is None:
+        page = sampled.get("collection")
+        page_type = "collection"
+    if page is None:
+        return None
+    url = page.get("url")
+    if not url:
+        return None
+    return url, page_type
+
+
+def _money_page_result(
+    url: str | None, page_type: str | None, data: dict | None,
+) -> tuple[str | None, str | None, float | None, LighthouseScores | None]:
+    if not data:
+        return url, page_type, None, None
+
+    audits = data.get("lighthouseResult", {}).get("audits", {})
+    lcp_val = audits.get("largest-contentful-paint", {}).get("numericValue")
+    lcp_ms = float(lcp_val) if lcp_val else None
+    lighthouse = _lighthouse_from_response(data)
+    return url, page_type, lcp_ms, lighthouse

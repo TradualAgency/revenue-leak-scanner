@@ -17,7 +17,7 @@ _TIMEOUT = aiohttp.ClientTimeout(total=15.0)
 _SHARED_PLATFORMS = {"myshopify.com", "squarespace.com", "wixsite.com", "webflow.io"}
 
 
-def _extract_domain(url: str) -> str:
+def extract_domain(url: str) -> str:
     parsed = urlparse(url if "://" in url else f"https://{url}")
     host = (parsed.hostname or url).lower().removeprefix("www.")
     for platform in _SHARED_PLATFORMS:
@@ -31,7 +31,7 @@ async def fetch_traffic_estimates(store_url: str) -> SeRankingTraffic | None:
         logger.debug("SERANKING_API_KEY not configured — skipping traffic lookup")
         return None
 
-    domain = _extract_domain(store_url)
+    domain = extract_domain(store_url)
     headers = {"Authorization": f"Token {settings.SERANKING_API_KEY}"}
     params = {"domain": domain, "with_subdomains": 1}
 

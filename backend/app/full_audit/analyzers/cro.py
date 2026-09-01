@@ -2,6 +2,8 @@ import re
 
 from bs4 import BeautifulSoup
 
+from app.full_audit.page_sampling import PAGE_LABELS as _PAGE_LABELS
+from app.full_audit.page_sampling import sample_pages_by_type as _sample_pages_by_type
 from app.full_audit.schemas import CheckoutFlow, CroObservation, Performance, RichResultsHealth
 
 _REVIEW_PLATFORM_DOMAINS = [
@@ -17,24 +19,6 @@ _RATING_PATTERN = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
-_PAGE_TYPE_PATTERNS: dict[str, list[str]] = {
-    "pdp": ["/product/", "/products/", "/p/", "/shop/", "/item/"],
-    "collection": ["/collections/", "/category/", "/c/", "/shop-all", "/categorie"],
-    "cart": ["/cart", "/winkelwagen", "/basket"],
-    "checkout": ["/checkout"],
-    "account": ["/account", "/login", "/register", "/inloggen"],
-}
-
-_PAGE_LABELS = {
-    "homepage": "Homepage",
-    "pdp": "Product page (PDP)",
-    "collection": "Collection page",
-    "cart": "Cart",
-    "checkout": "Checkout",
-    "account": "Account",
-    "other": "Other",
-}
-
 _SP_EST_IMPACT = {
     "pdp": (
         "High — winkels met zichtbare reviews zien 15-20% hogere add-to-cart rates. "
@@ -49,25 +33,6 @@ _SP_EST_IMPACT = {
         "Ontbrekend sociaal bewijs verhoogt de drempel voor een eerste aankoop."
     ),
 }
-
-
-def _classify_page(url: str, is_first: bool) -> str:
-    if is_first:
-        return "homepage"
-    lower = url.lower()
-    for ptype, patterns in _PAGE_TYPE_PATTERNS.items():
-        if any(p in lower for p in patterns):
-            return ptype
-    return "other"
-
-
-def _sample_pages_by_type(pages: list[dict]) -> dict[str, dict]:
-    """Return one representative page per type — first match wins."""
-    sampled: dict[str, dict] = {}
-    for i, page in enumerate(pages):
-        ptype = _classify_page(page.get("url", ""), is_first=(i == 0))
-        sampled.setdefault(ptype, page)
-    return sampled
 
 
 def _detect_social_proof(html: str, has_aggregate_rating: bool = False) -> tuple[bool, str | None]:

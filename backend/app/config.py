@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     PAGESPEED_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     SERANKING_API_KEY: str = ""
+    DATAFORSEO_LOGIN: str = ""
+    DATAFORSEO_PASSWORD: str = ""
     # Gates operator-only data (the Sanity CMS export, which embeds a page password) on
     # the full-audit endpoints. The rest of a full audit is reachable by anyone holding
     # the (unguessable) audit UUID, matching the shareable-report-link model used

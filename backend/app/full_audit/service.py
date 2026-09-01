@@ -11,6 +11,8 @@ from app.database import AsyncSessionLocal
 from app.full_audit.analyzers.accessibility import make_accessibility_report
 from app.full_audit.analyzers.bloat import build_bloat_list
 from app.full_audit.analyzers.checkout import probe_checkout
+from app.full_audit.analyzers.competitor_benchmark import fetch_competitor_benchmark
+from app.full_audit.analyzers.compliance_eu import analyze_eu_compliance
 from app.full_audit.analyzers.cost import build_cost_analysis
 from app.full_audit.analyzers.cro import make_cro_observations
 from app.full_audit.analyzers.dns_email import analyze_dns_email
@@ -21,6 +23,7 @@ from app.full_audit.analyzers.owned_channels import detect_owned_channels
 from app.full_audit.analyzers.performance import analyze_performance
 from app.full_audit.analyzers.platform import detect_platform
 from app.full_audit.analyzers.product_feeds import analyze_product_feeds
+from app.full_audit.analyzers.retention import detect_retention
 from app.full_audit.analyzers.returns import detect_returns
 from app.full_audit.analyzers.rich_results import analyze_rich_results
 from app.full_audit.analyzers.ad_traffic import calculate_ad_traffic_impact
@@ -32,6 +35,8 @@ from app.full_audit.analyzers.security import check_security
 from app.full_audit.analyzers.seo import audit_seo
 from app.full_audit.analyzers.server_side_tracking import analyze_server_side_tracking
 from app.full_audit.analyzers.shipping import detect_shipping
+from app.full_audit.analyzers.shopify_apps import detect_shopify_apps
+from app.full_audit.analyzers.shopify_catalog import analyze_shopify_catalog
 from app.full_audit.analyzers.site_search import detect_site_search
 from app.full_audit.analyzers.third_party import apply_psi_third_party_measurements, scan_third_party
 from app.full_audit.analyzers.tracking import detect_tracking
@@ -222,6 +227,10 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 detect_returns(pages),                 # 15
                 detect_multi_region(store_url, pages), # 16
                 detect_marketplaces(pages),            # 17
+                analyze_shopify_catalog(store_url, pages), # 18
+                detect_shopify_apps(pages),            # 19
+                detect_retention(pages),               # 20
+                analyze_eu_compliance(pages),           # 21
                 return_exceptions=True,
             )
 
@@ -254,6 +263,10 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
             returns = _safe(results[15])
             multi_region = _safe(results[16])
             marketplaces = _safe(results[17])
+            shopify_catalog = _safe(results[18])
+            shopify_apps = _safe(results[19])
+            retention = _safe(results[20])
+            eu_compliance = _safe(results[21])
 
             # 3. Rollups (synchronous, depend on parallel results)
             cost = build_cost_analysis(third_party, platform)
@@ -280,10 +293,33 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                             _row.seranking_fetched_at = datetime.now(UTC)
                             await _db.commit()
 
+            # Competitor benchmark via DataForSEO — cached per audit row (30-day TTL).
+            # Real per-call cost, so this is cached even more conservatively than SE Ranking.
+            from app.full_audit.schemas import CompetitorBenchmarkReport  # local import avoids circular
+            _comp_cache_age_days = None
+            if audit.competitor_benchmark_fetched_at:
+                _comp_cache_age_days = (datetime.now(UTC) - audit.competitor_benchmark_fetched_at).days
+            if audit.competitor_benchmark_json and _comp_cache_age_days is not None and _comp_cache_age_days < 30:
+                competitor_benchmark = CompetitorBenchmarkReport(**audit.competitor_benchmark_json)
+                logger.info("Competitor benchmark cache hit for %s (%d days old)", store_url, _comp_cache_age_days)
+            else:
+                competitor_benchmark = await fetch_competitor_benchmark(store_url, pages)
+                if competitor_benchmark is not None:
+                    async with AsyncSessionLocal() as _db:
+                        _row = await _db.get(FullAudit, audit.id)
+                        if _row:
+                            _row.competitor_benchmark_json = competitor_benchmark.model_dump(mode="json")
+                            _row.competitor_benchmark_fetched_at = datetime.now(UTC)
+                            await _db.commit()
+
             ad_traffic_impact = calculate_ad_traffic_impact(
                 performance, third_party, tracking, server_side_tracking,
                 annual_revenue_eur=annual_rev,
                 traffic=seranking_traffic,
+                aov_override=audit.aov_eur,
+                sessions_override=audit.monthly_sessions,
+                cr_override_pct=audit.conversion_rate_pct,
+                ad_spend_override=audit.monthly_ad_spend_eur,
             )
             revenue_leak = calculate_revenue_leak(
                 performance, third_party, tracking, checkout, owned,
@@ -291,12 +327,23 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 ad_traffic_impact,
                 annual_revenue_eur=annual_rev,
                 traffic=seranking_traffic,
+                aov_override=audit.aov_eur,
+                sessions_override=audit.monthly_sessions,
+                cr_override_pct=audit.conversion_rate_pct,
+                ad_spend_override=audit.monthly_ad_spend_eur,
+                cost=cost,
             )
 
             # 4. Top-level synthesis
+            # Use the low bound for the headline claim in the core thesis — a sales
+            # claim should be the conservative end of the range, not the midpoint.
+            _leak_for_thesis = (
+                (revenue_leak.total_monthly_loss_eur_low if revenue_leak.total_monthly_loss_eur_low is not None else revenue_leak.total_monthly_loss_eur)
+                if revenue_leak else None
+            )
             synthesis = _synthesize(
                 performance, third_party, tracking, cost, platform, dns_email, rich_results, store_url,
-                revenue_leak_monthly_eur=revenue_leak.total_monthly_loss_eur if revenue_leak else None,
+                revenue_leak_monthly_eur=_leak_for_thesis,
             )
 
             # 5. Build full data model
@@ -315,6 +362,10 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 contact_email=audit.contact_email,
                 contact_person=audit.contact_person,
                 estimated_annual_revenue_eur=audit.estimated_annual_revenue_eur,
+                aov_eur=audit.aov_eur,
+                monthly_sessions=audit.monthly_sessions,
+                conversion_rate_pct=audit.conversion_rate_pct,
+                monthly_ad_spend_eur=audit.monthly_ad_spend_eur,
                 platform_architecture=platform,
                 performance=performance,
                 third_party_scripts=third_party,
@@ -333,9 +384,14 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 accessibility=accessibility,
                 product_feeds=product_feeds,
                 detected_stack=detected_stack,
+                shopify_catalog=shopify_catalog,
+                shopify_apps=shopify_apps,
+                retention=retention,
+                eu_compliance=eu_compliance,
                 ad_traffic_impact=ad_traffic_impact,
                 revenue_leak=revenue_leak,
                 seranking_traffic=seranking_traffic,
+                competitor_benchmark=competitor_benchmark,
                 **synthesis,
             )
 

@@ -4,6 +4,7 @@ import LeadCaptureForm from "~/components/LeadCaptureForm";
 import PricingCard from "~/components/PricingCard";
 import TestimonialCard from "~/components/TestimonialCard";
 import FaqItem from "~/components/FaqItem";
+import LogoMarquee from "~/components/LogoMarquee";
 
 export function meta() {
   return [
@@ -48,6 +49,13 @@ const painPoints = [
       "Most store owners spend $3,000–6,000/year on unused tools without realizing it. Plugin subscriptions and performance penalties silently drain your margins.",
   },
 ];
+
+// Placeholders — vervang name + src zodra de echte merklogo's er zijn.
+// Files live in frontend/public/logos/
+const brandLogos = Array.from({ length: 8 }, (_, i) => ({
+  name: `Brand ${i + 1}`,
+  src: "/logos/tradual-logo1.png",
+}));
 
 const steps = [
   {
@@ -131,7 +139,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-tradual-primary">
             <video
               className="hero-video w-full h-full object-cover"
-              src="/hero-loop-f1.mp4"
+              src="/hero-f1.mp4"
               autoPlay
               loop
               muted
@@ -174,12 +182,13 @@ export default function Home() {
       </div>
 
       {/* Social Proof Bar */}
-      <section className="py-8 px-4 bg-white border-b border-gray-100">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-sm text-gray-500 font-medium">
+      <section className="py-10 px-4 bg-white border-b border-gray-100">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm text-gray-500 font-medium text-center">
             Trusted by store owners generating over{" "}
             <span className="text-[#0a2f23] font-semibold">$50M in combined annual revenue</span>
           </p>
+          <LogoMarquee logos={brandLogos} className="mt-8" />
         </div>
       </section>
 
