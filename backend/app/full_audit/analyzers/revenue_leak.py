@@ -29,6 +29,7 @@ from __future__ import annotations
 from app.full_audit.analyzers.benchmarks import CITATIONS
 from app.full_audit.analyzers.findings import FindingsRegistry, PricedFinding, cro_finding_id, price_findings
 from app.full_audit.analyzers.funnel import build_funnel_model
+from app.full_audit.analyzers.performance import lcp_source_caveat, worst_mobile_lcp
 from app.full_audit.schemas import (
     AccessibilityHealth,
     AdTrafficImpact,
@@ -84,7 +85,12 @@ def _finalize_layer(
     kind: str,
     unpriced_finding_count: int = 0,
 ) -> RevenueLeakLayer:
-    priced_metrics = [m for m in metrics if m.monthly_loss_eur_low is not None]
+    # Filtered on the metric's OWN kind, not just the layer's declared kind — layer 1 is
+    # "revenue" but also carries the ad-spend-evaporation metric, which is `kind="cost"`
+    # (money already spent, not revenue lost). Without this filter that cost metric was
+    # silently summed into the layer's revenue total, mixing "you're losing this in
+    # sales" and "you're burning this in ad spend" into one number.
+    priced_metrics = [m for m in metrics if m.monthly_loss_eur_low is not None and m.kind == kind]
     total_low = _r(sum(m.monthly_loss_eur_low or 0 for m in priced_metrics)) if priced_metrics else None
     total_high = _r(sum(m.monthly_loss_eur_high or 0 for m in priced_metrics)) if priced_metrics else None
     total_mid = _r((total_low + total_high) / 2) if (total_low is not None and total_high is not None) else 0.0
@@ -251,17 +257,15 @@ def _register_performance_findings(
     ctx: dict = {}
     organic_share = 1 - funnel.paid_share
 
-    # — LCP —
-    lcp_ms = None
-    lcp_is_desktop_fallback = False
-    if performance and performance.mobile:
-        lcp_ms = performance.mobile.lcp_ms
-    if lcp_ms is None and performance and performance.desktop_lcp_ms:
-        lcp_ms = performance.desktop_lcp_ms
-        lcp_is_desktop_fallback = True
+    # — LCP — worst of the CrUX field measurement (origin-wide, real users) and the
+    # money-page Lighthouse lab run (a PDP/collection page, single simulated load). The
+    # field metric alone can hide a much slower revenue page; see worst_mobile_lcp's
+    # docstring for why the source must be surfaced whenever the lab figure wins.
+    lcp_ms, lcp_source = worst_mobile_lcp(performance)
+    lcp_is_desktop_fallback = lcp_source == "desktop"
     ctx["lcp_ms"] = lcp_ms
     ctx["lcp_is_desktop_fallback"] = lcp_is_desktop_fallback
-    lcp_caveat = " (desktop-meting — mobiel niet gemeten, mobiel is meestal trager)" if lcp_is_desktop_fallback else ""
+    lcp_caveat = lcp_source_caveat(performance, lcp_source)
 
     if lcp_ms is not None and lcp_ms > 2_500:
         s_over = (lcp_ms - 2_500) / 1_000
@@ -1231,7 +1235,11 @@ def calculate_revenue_leak(
     monthly_mid = _r((monthly_low + monthly_high) / 2)
     annual_low, annual_high, annual_mid = monthly_low * 12, monthly_high * 12, monthly_mid * 12
 
-    cost_monthly = _r(layer2.est_monthly_loss_eur or 0)
+    # Layer 1's ad-spend-evaporation metric is `kind="cost"` (money already spent, not
+    # revenue lost) and is excluded from layer1.est_monthly_loss_eur by _finalize_layer's
+    # kind filter — fold it into the cost line here instead of dropping it silently.
+    layer1_ad_cost = sum(m.monthly_loss_eur or 0 for m in layer1.metrics if m.kind == "cost")
+    cost_monthly = _r((layer2.est_monthly_loss_eur or 0) + layer1_ad_cost)
 
     leak_share_low = (monthly_low / funnel.monthly_revenue_eur) if funnel.monthly_revenue_eur > 0 else None
     leak_share_high = (monthly_high / funnel.monthly_revenue_eur) if funnel.monthly_revenue_eur > 0 else None

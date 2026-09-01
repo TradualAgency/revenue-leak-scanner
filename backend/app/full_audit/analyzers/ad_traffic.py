@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.full_audit.analyzers.funnel import build_funnel_model
+from app.full_audit.analyzers.performance import lcp_source_caveat, worst_mobile_lcp
 from app.full_audit.schemas import (
     AdTrafficImpact,
     Performance,
@@ -41,14 +42,20 @@ def calculate_ad_traffic_impact(
 
     mobile = performance.mobile if performance else None
 
-    # LCP: Google CrUX-correlatie — elke seconde boven 2.5s voegt ~12pp bounce toe (cap 60pp)
-    if mobile and mobile.lcp_ms is not None:
+    # LCP: Google CrUX-correlatie — elke seconde boven 2.5s voegt ~12pp bounce toe (cap 60pp).
+    # Uses the worst of the field measurement and the money-page lab run — the field
+    # metric is homepage-only and can hide a much slower PDP/collection page.
+    lcp_ms, lcp_source = worst_mobile_lcp(performance)
+    if lcp_ms is not None:
         has_signals = True
-        lcp_s = mobile.lcp_ms / 1000
+        lcp_s = lcp_ms / 1000
         lcp_uplift = min(60.0, max(0.0, (lcp_s - 2.5) * 12))
         if lcp_uplift > 0:
             uplift += lcp_uplift
-            drivers.append(f"LCP {lcp_s:.1f}s (grens 2.5s) — +{lcp_uplift:.0f}pp bounce-uplift")
+            drivers.append(
+                f"LCP {lcp_s:.1f}s (grens 2.5s){lcp_source_caveat(performance, lcp_source)} "
+                f"— +{lcp_uplift:.0f}pp bounce-uplift"
+            )
 
     # INP: interactieresponsiviteit — traag = frustratie = afhaken
     if mobile and mobile.inp_ms is not None:

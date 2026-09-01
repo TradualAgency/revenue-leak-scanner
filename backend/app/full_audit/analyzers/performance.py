@@ -324,7 +324,7 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Perfor
     # used downstream to replace the synthetic size/blocking constants in third_party.py.
     third_party_summary = _third_party_summary_by_domain(mobile_data) if mobile_data else {}
 
-    money_page_url, money_page_type, money_page_lcp, money_page_lighthouse = _money_page_result(
+    money_page_url, money_page_type, money_page_lcp, money_page_lcp_source, money_page_lighthouse = _money_page_result(
         money_page[0] if money_page else None,
         money_page[1] if money_page else None,
         money_page_data,
@@ -346,6 +346,7 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Perfor
         money_page_url=money_page_url,
         money_page_type=money_page_type,  # type: ignore[arg-type]
         money_page_lcp_ms=money_page_lcp,
+        money_page_lcp_source=money_page_lcp_source,  # type: ignore[arg-type]
         money_page_lighthouse=money_page_lighthouse,
         notes=notes,
     )
@@ -372,12 +373,82 @@ def _pick_money_page(pages: list[dict]) -> tuple[str, str] | None:
 
 def _money_page_result(
     url: str | None, page_type: str | None, data: dict | None,
-) -> tuple[str | None, str | None, float | None, LighthouseScores | None]:
+) -> tuple[str | None, str | None, float | None, str | None, LighthouseScores | None]:
     if not data:
-        return url, page_type, None, None
+        return url, page_type, None, None, None
+
+    lighthouse = _lighthouse_from_response(data)
+
+    # PSI returns CrUX field data per the exact URL queried (`loadingExperience`), not
+    # just per-origin — the same response already fetched for the lab LCP below can
+    # carry a real-user figure for this specific page. It's absent when CrUX doesn't
+    # have enough real-user traffic for this URL (common on lower-traffic PDP/collection
+    # pages), in which case we fall back to the simulated Lighthouse run.
+    field_lcp = _cwv_from_field_data(data).lcp_ms
+    if field_lcp is not None:
+        return url, page_type, field_lcp, "field", lighthouse
 
     audits = data.get("lighthouseResult", {}).get("audits", {})
     lcp_val = audits.get("largest-contentful-paint", {}).get("numericValue")
     lcp_ms = float(lcp_val) if lcp_val else None
-    lighthouse = _lighthouse_from_response(data)
-    return url, page_type, lcp_ms, lighthouse
+    return url, page_type, lcp_ms, "lab" if lcp_ms is not None else None, lighthouse
+
+
+def worst_mobile_lcp(performance: Performance | None) -> tuple[float | None, str | None]:
+    """Best available mobile LCP signal for the store, preferring real-user data over
+    simulated data wherever it exists.
+
+    `performance.mobile.lcp_ms` is CrUX field data (real users) for the homepage.
+    `performance.money_page_lcp_ms` is the money page's own PSI result, which is
+    field data too whenever CrUX has enough real-user traffic for that specific URL
+    (`money_page_lcp_source == "field"`) — that's the single best signal available
+    (real users, on the actual revenue page) and is returned directly, no need to
+    compare it against a different page's number.
+
+    Only when the money page falls back to a simulated Lighthouse run
+    (`money_page_lcp_source == "lab"`) do we not know which of the two figures better
+    reflects reality, so we take the worse of the two as the conservative estimate —
+    callers MUST surface the returned source in any text they generate, since a lab
+    number should never be presented as if it were a real-user measurement. Falls
+    back to `desktop_lcp_ms` only when no mobile figure is available at all.
+
+    Returns `(lcp_ms, source)` with source in
+    {"money_page_field", "field", "money_page_lab", "desktop", None}.
+    """
+    if performance is None:
+        return None, None
+
+    field_lcp = performance.mobile.lcp_ms if performance.mobile else None
+    money_lcp = performance.money_page_lcp_ms
+
+    if money_lcp is not None and performance.money_page_lcp_source == "field":
+        return money_lcp, "money_page_field"
+
+    if field_lcp is not None and money_lcp is not None:
+        return (money_lcp, "money_page_lab") if money_lcp >= field_lcp else (field_lcp, "field")
+    if field_lcp is not None:
+        return field_lcp, "field"
+    if money_lcp is not None:
+        return money_lcp, "money_page_lab"
+    if performance.desktop_lcp_ms is not None:
+        return performance.desktop_lcp_ms, "desktop"
+    return None, None
+
+
+def lcp_source_caveat(performance: Performance | None, source: str | None) -> str:
+    """Parenthetical caveat for any sentence built around `worst_mobile_lcp`'s result —
+    empty for the homepage's own real-user data (the implicit baseline), otherwise
+    states which page/measurement type produced the number. "money_page_field" is
+    still real-user data (just for a specific page, not the origin default) so it
+    gets an attribution note rather than the lab disclaimer."""
+    if source == "desktop":
+        return " (desktop-meting — mobiel niet gemeten, mobiel is meestal trager)"
+    if source == "money_page_field":
+        page_label = "productpagina" if performance and performance.money_page_type == "pdp" else "collectiepagina"
+        url_suffix = f" ({performance.money_page_url})" if performance and performance.money_page_url else ""
+        return f" (echte bezoekersdata van je {page_label}{url_suffix})"
+    if source == "money_page_lab":
+        page_label = "productpagina" if performance and performance.money_page_type == "pdp" else "collectiepagina"
+        url_suffix = f" ({performance.money_page_url})" if performance and performance.money_page_url else ""
+        return f" (labmeting op je {page_label}{url_suffix} — geen real-user meting)"
+    return ""

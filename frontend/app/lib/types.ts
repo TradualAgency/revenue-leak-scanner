@@ -563,6 +563,7 @@ export interface FullAuditData {
     money_page_url: string | null;
     money_page_type: "pdp" | "collection" | null;
     money_page_lcp_ms: number | null;
+    money_page_lcp_source: "field" | "lab" | null;
     money_page_lighthouse: {
       performance: number | null;
       accessibility: number | null;

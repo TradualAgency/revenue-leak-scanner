@@ -20,7 +20,7 @@ from app.full_audit.analyzers.domain_health import analyze_domain_health
 from app.full_audit.analyzers.marketplaces import detect_marketplaces
 from app.full_audit.analyzers.multi_region import detect_multi_region
 from app.full_audit.analyzers.owned_channels import detect_owned_channels
-from app.full_audit.analyzers.performance import analyze_performance
+from app.full_audit.analyzers.performance import analyze_performance, lcp_source_caveat, worst_mobile_lcp
 from app.full_audit.analyzers.platform import detect_platform
 from app.full_audit.analyzers.product_feeds import analyze_product_feeds
 from app.full_audit.analyzers.retention import detect_retention
@@ -49,6 +49,7 @@ from app.full_audit.schemas import (
     FullAuditData,
     Performance,
     PlatformArchitecture,
+    RevenueLeakReport,
     RichResultsHealth,
     ThirdPartyScripts,
     TrackingDataQuality,
@@ -58,17 +59,27 @@ logger = logging.getLogger(__name__)
 
 
 def _build_thesis(signal: dict, monthly_leak_eur: float | None) -> str:
+    # `monthly_leak_eur` is only passed in when the winning signal itself has a priced
+    # euro contribution (see _synthesize's impact ranking) — a signal with €0 measured
+    # impact must never borrow the report-wide total, or the sentence claims credit for
+    # money it didn't cause.
     leak_clause = f" Geschatte lekkage: €{monthly_leak_eur:,.0f} per maand." if monthly_leak_eur else ""
     kind = signal["kind"]
+    lcp_caveat = signal.get("lcp_caveat", "")
     if kind == "lcp_critical":
         return (
-            f"De mobiele pagina wordt pas na {signal['lcp_s']:.1f} seconden goed zichtbaar. "
+            f"De mobiele pagina wordt pas na {signal['lcp_s']:.1f} seconden goed zichtbaar{lcp_caveat}. "
             f"Daardoor haken bezoekers af voordat ze iets kunnen kopen.{leak_clause}"
         )
     if kind == "lcp_warning":
         return (
-            f"De mobiele pagina is met {signal['lcp_s']:.1f} seconden traag zichtbaar. "
+            f"De mobiele pagina is met {signal['lcp_s']:.1f} seconden traag zichtbaar{lcp_caveat}. "
             f"Dat kost vooral mobiele bezoekers en remt de verkoop.{leak_clause}"
+        )
+    if kind == "inp_warning":
+        return (
+            f"De pagina reageert pas na {signal['tbt_ms']:.0f}ms op een klik. "
+            f"Dat voelt traag en onbetrouwbaar, en kost bezoekers die al aan het kopen waren.{leak_clause}"
         )
     if kind == "third_party_blocking":
         return (
@@ -98,6 +109,32 @@ def _build_thesis(signal: dict, monthly_leak_eur: float | None) -> str:
     return f"De scan wijst op concrete plekken waar omzet blijft liggen en herstel meetbaar voordeel kan opleveren.{leak_clause}"
 
 
+# Maps a risk signal's "kind" to the revenue_leak finding_id whose priced euro impact
+# should rank it. Signal kinds absent here (third-party blocking/domains, attribution
+# loss, pixel gap, dmarc, spf) have no priced finding anywhere in the report — they
+# rank at €0, same as a risk that was checked and found fine, rather than being able
+# to out-rank a signal the report actually put a number on.
+_SIGNAL_FINDING_ID = {
+    "lcp_critical": "perf.lcp_mobile",
+    "lcp_warning": "perf.lcp_mobile",
+    "inp_warning": "perf.inp_mobile",
+}
+
+
+def _finding_impact_eur(revenue_leak: RevenueLeakReport | None) -> dict:
+    """finding_id -> priced monthly midpoint, read straight from the Revenue Leak
+    layers so the headline ranks on the exact same euros that section reports below
+    it — not a second, independent scoring model that could disagree with it."""
+    impact: dict[str, float] = {}
+    if revenue_leak is None:
+        return impact
+    for layer in revenue_leak.layers:
+        for m in layer.metrics:
+            if m.finding_id and m.monthly_loss_eur:
+                impact[m.finding_id] = m.monthly_loss_eur
+    return impact
+
+
 def _synthesize(
     performance: Performance | None,
     third_party: ThirdPartyScripts | None,
@@ -108,50 +145,83 @@ def _synthesize(
     rich_results: RichResultsHealth | None,
     store_url: str,
     revenue_leak_monthly_eur: float | None = None,
+    revenue_leak: RevenueLeakReport | None = None,
 ) -> dict:
-    risks: list[str] = []
-    risk_signals: list[dict] = []
+    # Each entry is {"text": str, "signal": dict | None, "impact_eur": float}. Text and
+    # signal used to live in two parallel lists (`risks`/`risk_signals`) that could
+    # silently drift out of sync — third_party_domains only ever appended to `risks` —
+    # so "biggest risk" and "core thesis" could describe two different findings. One
+    # list of entries makes that structurally impossible.
+    risk_entries: list[dict] = []
     opportunities: list[str] = []
     lift_pct: float | None = None
+    impact_map = _finding_impact_eur(revenue_leak)
+
+    def _impact(signal: dict | None) -> float:
+        if not signal:
+            return 0.0
+        finding_id = _SIGNAL_FINDING_ID.get(signal["kind"])
+        return impact_map.get(finding_id, 0.0) if finding_id else 0.0
 
     if performance:
-        lcp = performance.mobile.lcp_ms if performance.mobile else None
-        if lcp and lcp > 4000:
-            risks.append(f"Mobiele bezoekers zien de belangrijkste content pas na {lcp / 1000:.1f} seconden")
-            risk_signals.append({"kind": "lcp_critical", "lcp_s": lcp / 1000})
-        elif lcp and lcp > 2500:
-            risks.append(f"De mobiele pagina is pas na {lcp / 1000:.1f} seconden goed zichtbaar")
-            risk_signals.append({"kind": "lcp_warning", "lcp_s": lcp / 1000})
+        lcp_ms, lcp_source = worst_mobile_lcp(performance)
+        lcp_caveat = lcp_source_caveat(performance, lcp_source)
+        if lcp_ms and lcp_ms > 4000:
+            risk_entries.append({
+                "text": f"Mobiele bezoekers zien de belangrijkste content pas na {lcp_ms / 1000:.1f} seconden{lcp_caveat}",
+                "signal": {"kind": "lcp_critical", "lcp_s": lcp_ms / 1000, "lcp_caveat": lcp_caveat},
+            })
+        elif lcp_ms and lcp_ms > 2500:
+            risk_entries.append({
+                "text": f"De mobiele pagina is pas na {lcp_ms / 1000:.1f} seconden goed zichtbaar{lcp_caveat}",
+                "signal": {"kind": "lcp_warning", "lcp_s": lcp_ms / 1000, "lcp_caveat": lcp_caveat},
+            })
         perf_score = performance.lighthouse.performance if performance.lighthouse else None
         if perf_score is not None:
             lift_pct = float(max(0, min(60, int((100 - perf_score) * 0.6))))
 
+        tbt_ms = performance.tbt_ms
+        if tbt_ms is not None and tbt_ms > 200:
+            risk_entries.append({
+                "text": f"De pagina reageert pas na {tbt_ms:.0f}ms op een klik — dat voelt traag en onbetrouwbaar",
+                "signal": {"kind": "inp_warning", "tbt_ms": tbt_ms},
+            })
+
     if third_party:
         if third_party.total_third_party_blocking_ms and third_party.total_third_party_blocking_ms > 500:
-            risks.append(
-                f"Externe scripts houden de pagina {third_party.total_third_party_blocking_ms:.0f} ms tegen bij het laden"
-            )
-            risk_signals.append({"kind": "third_party_blocking", "blocking_ms": third_party.total_third_party_blocking_ms})
+            risk_entries.append({
+                "text": f"Externe scripts houden de pagina {third_party.total_third_party_blocking_ms:.0f} ms tegen bij het laden",
+                "signal": {"kind": "third_party_blocking", "blocking_ms": third_party.total_third_party_blocking_ms},
+            })
         if third_party.total_third_party_domains and third_party.total_third_party_domains > 15:
-            risks.append(f"{third_party.total_third_party_domains} externe domeinen laden mee bij het openen van de pagina")
+            risk_entries.append({
+                "text": f"{third_party.total_third_party_domains} externe domeinen laden mee bij het openen van de pagina",
+                "signal": {"kind": "third_party_domains", "domains": third_party.total_third_party_domains},
+            })
 
     if tracking:
         if tracking.est_attribution_loss_percent and tracking.est_attribution_loss_percent > 25:
-            risks.append(
-                f"Ongeveer {tracking.est_attribution_loss_percent:.0f}% van je conversies komt waarschijnlijk niet goed aan in advertentieplatformen"
-            )
-            risk_signals.append({"kind": "attribution_loss", "pct": tracking.est_attribution_loss_percent})
+            risk_entries.append({
+                "text": f"Ongeveer {tracking.est_attribution_loss_percent:.0f}% van je conversies komt waarschijnlijk niet goed aan in advertentieplatformen",
+                "signal": {"kind": "attribution_loss", "pct": tracking.est_attribution_loss_percent},
+            })
         if tracking.pixels_health in ("partial", "missing"):
-            risks.append("Meta en Google missen waarschijnlijk conversiedata door een onvolledige meetsetup")
-            risk_signals.append({"kind": "pixel_gap"})
+            risk_entries.append({
+                "text": "Meta en Google missen waarschijnlijk conversiedata door een onvolledige meetsetup",
+                "signal": {"kind": "pixel_gap"},
+            })
 
     if dns_email:
         if dns_email.dmarc_policy in ("missing", "none"):
-            risks.append("E-mailbeveiliging is zwak ingesteld, waardoor mail vaker in spam kan belanden")
-            risk_signals.append({"kind": "dmarc", "policy": dns_email.dmarc_policy})
+            risk_entries.append({
+                "text": "E-mailbeveiliging is zwak ingesteld, waardoor mail vaker in spam kan belanden",
+                "signal": {"kind": "dmarc", "policy": dns_email.dmarc_policy},
+            })
         if dns_email.spf_status and dns_email.spf_status != "valid":
-            risks.append("Afzendercontrole voor e-mail is niet goed ingesteld")
-            risk_signals.append({"kind": "spf", "status": dns_email.spf_status})
+            risk_entries.append({
+                "text": "Afzendercontrole voor e-mail is niet goed ingesteld",
+                "signal": {"kind": "spf", "status": dns_email.spf_status},
+            })
 
     if rich_results and not rich_results.has_aggregate_rating:
         opportunities.append("Je reviews worden nog niet als sterren in Google getoond, waardoor je zoekresultaat minder snel opvalt")
@@ -163,15 +233,28 @@ def _synthesize(
         if platform.architecture_type == "monolith" and platform.detected_platform not in ("Shopify",):
             opportunities.append("Een modernere of beter geoptimaliseerde setup kan de site structureel sneller maken")
 
-    biggest_risk = risks[0] if risks else None
+    # Rank on priced euro impact, not append order — a DMARC finding with €0 anywhere
+    # in the report can no longer beat an LCP finding the Revenue Leak section put
+    # thousands of euros on. Stable sort: ties keep their original (severity-authored)
+    # order, so a report where nothing is priced behaves exactly as before.
+    for entry in risk_entries:
+        entry["impact_eur"] = _impact(entry["signal"])
+    risk_entries.sort(key=lambda e: e["impact_eur"], reverse=True)
+
+    biggest_risk = risk_entries[0]["text"] if risk_entries else None
     biggest_opportunity = opportunities[0] if opportunities else None
 
     platform_name = platform.detected_platform if platform and platform.detected_platform else "onbekend platform"
     core_thesis: str | None = None
-    if risk_signals:
-        core_thesis = _build_thesis(risk_signals[0], revenue_leak_monthly_eur)
+    if risk_entries:
+        top = risk_entries[0]
+        # Only attach the report-wide leak figure when the winning signal itself has a
+        # priced contribution to it — otherwise the sentence claims credit for money a
+        # different finding (not this one) actually accounts for.
+        thesis_leak = revenue_leak_monthly_eur if top["impact_eur"] > 0 else None
+        core_thesis = _build_thesis(top["signal"], thesis_leak)
 
-    n_issues = len(risks)
+    n_issues = len(risk_entries)
     n_opp = len(opportunities)
     audit_summary = (
         f"Geautomatiseerde outside-only scan van {platform_name} store ({store_url}). "
@@ -344,6 +427,7 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
             synthesis = _synthesize(
                 performance, third_party, tracking, cost, platform, dns_email, rich_results, store_url,
                 revenue_leak_monthly_eur=_leak_for_thesis,
+                revenue_leak=revenue_leak,
             )
 
             # 5. Build full data model

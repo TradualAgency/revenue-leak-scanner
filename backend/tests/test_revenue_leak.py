@@ -7,8 +7,10 @@ import pytest
 
 from app.full_audit.analyzers.findings import FindingsRegistry, PricedFinding, price_findings
 from app.full_audit.analyzers.funnel import build_funnel_model
+from app.full_audit.analyzers.performance import lcp_source_caveat, worst_mobile_lcp
 from app.full_audit.analyzers.revenue_leak import calculate_revenue_leak
 from app.full_audit.schemas import (
+    AdTrafficImpact,
     CheckoutFlow,
     CroObservation,
     LighthouseScores,
@@ -523,3 +525,137 @@ def test_v1_audit_row_still_parses():
     assert report.model_version is None
     assert report.funnel is None
     assert report.total_monthly_loss_eur == 48900
+
+
+# --- worst-of LCP (field vs. money-page lab/field) ------------------------------------
+
+def test_worst_mobile_lcp_prefers_slow_money_page_lab_over_healthy_field_lcp():
+    """The CrUX field measurement is origin-wide and homepage-anchored — it can read
+    'good' while the actual revenue page (a PDP/collection) is unusable. The report
+    must catch that instead of only ever looking at the homepage number. No
+    money_page_lcp_source set here — CrUX had no real-user data for that URL, so PSI
+    fell back to a simulated Lighthouse run, same as production when the field lookup
+    for that specific page comes back empty."""
+    performance = Performance(
+        mobile=MobileCWV(lcp_ms=1400.0),  # healthy field LCP, homepage
+        money_page_url="https://example.com/collections/all",
+        money_page_type="collection",
+        money_page_lcp_ms=16_800.0,  # lab run on the actual revenue page
+        money_page_lcp_source="lab",
+    )
+
+    lcp_ms, source = worst_mobile_lcp(performance)
+
+    assert lcp_ms == 16_800.0
+    assert source == "money_page_lab"
+
+
+def test_worst_mobile_lcp_prefers_money_page_field_data_even_when_lower_than_homepage():
+    """When CrUX DOES have real-user data for the money page itself (PSI's
+    per-URL `loadingExperience`, not just the origin-wide figure), that's the single
+    best signal available — real users, on the actual revenue page — and must be used
+    directly rather than compared against a different page's field figure."""
+    performance = Performance(
+        mobile=MobileCWV(lcp_ms=3800.0),  # slower homepage field LCP
+        money_page_url="https://example.com/collections/all",
+        money_page_type="collection",
+        money_page_lcp_ms=2100.0,  # faster real-user LCP on the money page itself
+        money_page_lcp_source="field",
+    )
+
+    lcp_ms, source = worst_mobile_lcp(performance)
+
+    assert lcp_ms == 2100.0
+    assert source == "money_page_field"
+
+
+def test_worst_mobile_lcp_keeps_field_data_when_it_is_worse():
+    performance = Performance(
+        mobile=MobileCWV(lcp_ms=5000.0),
+        money_page_url="https://example.com/collections/all",
+        money_page_type="collection",
+        money_page_lcp_ms=1600.0,
+        money_page_lcp_source="lab",
+    )
+
+    lcp_ms, source = worst_mobile_lcp(performance)
+
+    assert lcp_ms == 5000.0
+    assert source == "field"
+
+
+def test_lcp_source_caveat_flags_money_page_lab_as_not_real_user_data():
+    performance = Performance(
+        money_page_url="https://example.com/collections/all-mens",
+        money_page_type="collection",
+    )
+    caveat = lcp_source_caveat(performance, "money_page_lab")
+    assert "collectiepagina" in caveat
+    assert "real-user" in caveat
+
+
+def test_lcp_source_caveat_attributes_money_page_field_without_disclaiming_it():
+    performance = Performance(
+        money_page_url="https://example.com/collections/all-mens",
+        money_page_type="collection",
+    )
+    caveat = lcp_source_caveat(performance, "money_page_field")
+    assert "collectiepagina" in caveat
+    assert "echte bezoekersdata" in caveat
+    assert "geen real-user" not in caveat
+
+
+def test_lcp_source_caveat_empty_for_field_data():
+    assert lcp_source_caveat(Performance(), "field") == ""
+
+
+# --- layer 1 cost/revenue kind separation ---------------------------------------------
+
+def test_ad_spend_evaporation_excluded_from_layer1_revenue_total():
+    """Ad-spend evaporation is `kind='cost'` (money already spent, not revenue lost)
+    but is registered inside layer 1, which is finalised as `kind='revenue'`.
+    `_finalize_layer` must filter on the metric's own kind, not just the layer's —
+    otherwise this cost figure is silently summed into the revenue-leak headline,
+    mixing 'you're losing this in sales' with 'you're burning this in ad spend'."""
+    performance = Performance(
+        mobile=MobileCWV(lcp_ms=1200.0, inp_ms=100.0, cls=0.02),
+        lighthouse=LighthouseScores(performance=95),
+        tbt_ms=100.0,
+    )
+    ad_traffic = AdTrafficImpact(
+        est_post_click_bounce_pct=45.0,  # == baseline: no bounce finding
+        bounce_baseline_pct=45.0,
+        est_wasted_ad_spend_pct=20.0,
+        data_source="heuristic",
+    )
+
+    report = calculate_revenue_leak(
+        performance=performance,
+        third_party=None,
+        tracking=None,
+        checkout=None,
+        owned=None,
+        cro_observations=[],
+        rich_results=None,
+        product_feeds=None,
+        accessibility=None,
+        ad_traffic=ad_traffic,
+        annual_revenue_eur=1_152_000,
+        aov_override=120.0,
+        sessions_override=20_000,
+        cr_override_pct=4.0,
+    )
+
+    layer1 = _layer(report, 1)
+    ad_metric = _metric(layer1, "advertentiegeld")
+    assert ad_metric.kind == "cost"
+    assert ad_metric.monthly_loss_eur is not None
+    assert ad_metric.monthly_loss_eur > 0
+
+    # Every other layer-1 metric is fine (status='good'), so the layer's revenue
+    # total must be exactly zero — the cost metric must not be folded in.
+    assert layer1.est_monthly_loss_eur_low == 0.0
+    assert layer1.est_monthly_loss_eur == 0.0
+
+    # The cost figure must still show up somewhere: the report's cost line.
+    assert report.cost_monthly_eur == pytest.approx(ad_metric.monthly_loss_eur)

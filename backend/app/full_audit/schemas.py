@@ -82,6 +82,10 @@ class Performance(BaseModel):
     money_page_url: str | None = None
     money_page_type: Literal["pdp", "collection"] | None = None
     money_page_lcp_ms: float | None = None
+    # CrUX returns real-user field data per-URL, not just per-origin — "field" when
+    # PSI had enough real-user traffic for this exact page to report it, "lab" when it
+    # fell back to the simulated Lighthouse run (common for lower-traffic pages).
+    money_page_lcp_source: Literal["field", "lab"] | None = None
     money_page_lighthouse: LighthouseScores | None = None
     notes: str | None = None
 

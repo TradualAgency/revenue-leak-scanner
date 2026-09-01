@@ -281,7 +281,9 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
             {data.money_page_lcp_ms != null && (
               <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
                 <div className={`text-lg font-semibold ${data.money_page_lcp_ms > 4000 ? "text-red-500" : data.money_page_lcp_ms > 2500 ? "text-yellow-600" : "text-emerald-600"}`}>{(data.money_page_lcp_ms / 1000).toFixed(1)}s</div>
-                <div className="text-xs text-gray-400 mt-0.5">LCP</div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  LCP {data.money_page_lcp_source === "field" ? "(real users)" : data.money_page_lcp_source === "lab" ? "(lab)" : ""}
+                </div>
               </div>
             )}
             {data.money_page_lighthouse?.performance != null && (
