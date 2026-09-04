@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { getFullAudit, getFullAuditSanityExport, getFullAuditStatus } from "~/lib/api";
+import {
+  createCompetitorBenchmark,
+  getCompetitorBenchmarkStatus,
+  getCompetitorCandidates,
+  getFullAudit,
+  getFullAuditSanityExport,
+  getFullAuditStatus,
+  updateCompetitorSet,
+} from "~/lib/api";
 import { eur, eurRange, severityByShare } from "~/lib/format";
 import type {
   AccessibilityHealth,
   AdTrafficImpact,
   AiAnalysis,
   AiBloatInsight,
+  CompetitorBenchmarkStatusResponse,
+  CompetitorCandidatesResponse,
   DataConflict,
   MetricStatus,
   ModelWarning,
@@ -1466,6 +1476,159 @@ function CompetitorBenchmarkSection({ data }: { data: NonNullable<FullAuditData[
   );
 }
 
+const COMPETITOR_RUN_TERMINAL_STATUSES = new Set(["ready", "insufficient_data", "failed"]);
+
+function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
+  const [runId, setRunId] = useState<string | null>(null);
+  const [status, setStatus] = useState<CompetitorBenchmarkStatusResponse | null>(null);
+  const [candidates, setCandidates] = useState<CompetitorCandidatesResponse | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [addDomain, setAddDomain] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const isDone = status != null && COMPETITOR_RUN_TERMINAL_STATUSES.has(status.status);
+
+  useEffect(() => {
+    if (!runId || isDone) return;
+    const t = setTimeout(async () => {
+      try {
+        setStatus(await getCompetitorBenchmarkStatus(runId));
+      } catch {
+        // transient poll error — the next tick will retry
+      }
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [runId, status, isDone]);
+
+  useEffect(() => {
+    if (!runId || !isDone) return;
+    getCompetitorCandidates(runId).then(setCandidates);
+  }, [runId, isDone]);
+
+  async function handleStart() {
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await createCompetitorBenchmark({ full_audit_id: fullAuditId });
+      setRunId(res.id);
+      setStatus({
+        id: res.id, status: res.status, store_domain: "", phase_label_nl: null,
+        measured_count: 0, total_count: 0, created_at: res.created_at, completed_at: null,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kon marktvergelijking niet starten");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  async function handleAdd() {
+    if (!runId || !addDomain.trim()) return;
+    setError(null);
+    try {
+      await updateCompetitorSet(runId, { add: [addDomain.trim()], remove: [] });
+      setAddDomain("");
+      setStatus((s) => (s ? { ...s, status: "measuring" } : s));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kon concurrent niet toevoegen");
+    }
+  }
+
+  async function handleRemove(domain: string) {
+    if (!runId) return;
+    setError(null);
+    try {
+      await updateCompetitorSet(runId, { add: [], remove: [domain] });
+      setStatus((s) => (s ? { ...s, status: "measuring" } : s));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Kon concurrent niet verwijderen");
+    }
+  }
+
+  return (
+    <SectionCard title="Marktvergelijking">
+      {!runId && (
+        <>
+          <p className="text-sm text-gray-500 mb-4">
+            Meet automatisch geselecteerde concurrenten op snelheid, stack, checkout-frictie, tracking en toekomstgereedheid — met een euro-gat t.o.v. de marktmediaan als kop.
+          </p>
+          <button
+            onClick={handleStart}
+            disabled={starting}
+            className="bg-[#1a1f2e] text-white text-sm font-medium px-5 py-2.5 rounded-xl disabled:opacity-50"
+          >
+            {starting ? "Starten…" : "Start marktvergelijking"}
+          </button>
+        </>
+      )}
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
+      {status && !isDone && (
+        <p className="text-sm text-gray-500 mt-3">
+          {status.phase_label_nl ?? status.status}
+          {status.total_count > 0 && ` — ${status.measured_count}/${status.total_count} concurrenten gemeten`}…
+        </p>
+      )}
+      {status?.status === "insufficient_data" && (
+        <p className="text-sm text-amber-600 mt-3">Te weinig concurrenten succesvol gemeten voor een betrouwbare marktmediaan.</p>
+      )}
+      {status?.status === "failed" && (
+        <p className="text-sm text-red-600 mt-3">Marktvergelijking mislukt.</p>
+      )}
+      {isDone && runId && (
+        <div className="mt-4 space-y-4">
+          <a
+            href={`/marktvergelijking/${runId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-[#c5a96f] hover:underline font-medium"
+          >
+            Bekijk prospect-pagina →
+          </a>
+          {candidates && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Geselecteerde concurrenten</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {candidates.kept.map((c) => (
+                  <span
+                    key={c.domain}
+                    className="inline-flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs text-gray-700"
+                  >
+                    {c.domain}
+                    {c.reason_nl && <span className="text-gray-400" title={c.reason_nl}>ⓘ</span>}
+                    <button onClick={() => handleRemove(c.domain)} className="text-gray-400 hover:text-red-500 font-bold">×</button>
+                  </span>
+                ))}
+                {candidates.kept.length === 0 && <span className="text-xs text-gray-400">Geen concurrenten geselecteerd.</span>}
+              </div>
+              <div className="flex gap-2 mb-4">
+                <input
+                  value={addDomain}
+                  onChange={(e) => setAddDomain(e.target.value)}
+                  placeholder="domein.nl toevoegen"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
+                />
+                <button onClick={handleAdd} className="bg-gray-100 text-gray-700 text-xs px-3 py-1.5 rounded-lg font-medium">
+                  Toevoegen
+                </button>
+              </div>
+              {candidates.rejected.length > 0 && (
+                <details className="text-xs">
+                  <summary className="text-[#c5a96f] cursor-pointer">Afgewezen kandidaten ({candidates.rejected.length})</summary>
+                  <ul className="mt-2 space-y-1">
+                    {candidates.rejected.map((r) => (
+                      <li key={r.domain} className="text-gray-500">{r.domain} — {r.reason_nl}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 function ShopifyPlatformSection({
   catalog,
   apps,
@@ -1908,6 +2071,7 @@ export default function FullAuditResults() {
                 </>
               )}
               {auditData.competitor_benchmark && <CompetitorBenchmarkSection data={auditData.competitor_benchmark} />}
+              {auditId && <CompetitorBenchmarkPanel fullAuditId={auditId} />}
               {auditData.third_party_scripts && <ThirdPartySection data={auditData.third_party_scripts} />}
               {auditData.tracking_data_quality && <TrackingSection data={auditData.tracking_data_quality} />}
               {auditData.checkout_flow && <CheckoutSection data={auditData.checkout_flow} />}

@@ -683,3 +683,205 @@ export interface ReportFullResponse {
   created_at: string;
   completed_at: string | null;
 }
+
+// --- Competitor benchmark (marktvergelijking) --------------------------------------
+
+export type CompetitorRunStatus =
+  | "queued"
+  | "discovering"
+  | "measuring"
+  | "scoring"
+  | "ready"
+  | "insufficient_data"
+  | "failed";
+
+export type CandidateClassification = "direct" | "category" | "marketplace" | "retailer" | "irrelevant" | "operator";
+
+export interface MarketInfo {
+  location_code: number;
+  language_code: string;
+  source: string;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface CandidateDomain {
+  domain: string;
+  discovery_source: "competitors_domain" | "serp_competitors" | "both" | "operator";
+  organic_keywords_count: number | null;
+  est_organic_traffic_value_usd: number | null;
+  avg_keyword_position: number | null;
+  intersections: number | null;
+  serp_keyword_hits: number | null;
+  size_ratio_to_store: number | null;
+  title: string | null;
+  meta_description: string | null;
+  og_site_name: string | null;
+  platform_guess: string | null;
+  html_lang: string | null;
+  enrichment_status: "ok" | "unreachable" | "skipped";
+  classification: CandidateClassification | null;
+  relevance_score: number | null;
+  reason_nl: string | null;
+  rank: number | null;
+}
+
+export interface RejectedCandidate {
+  domain: string;
+  reason_code:
+    | "self"
+    | "same_brand"
+    | "blocklist"
+    | "size_band"
+    | "min_intersections"
+    | "market_coherence"
+    | "ai_excluded"
+    | "enrichment_unreachable";
+  reason_nl: string;
+  category: string | null;
+}
+
+export interface CompetitorCandidatesResponse {
+  kept: CandidateDomain[];
+  rejected: RejectedCandidate[];
+  market: MarketInfo | null;
+  market_note_nl: string | null;
+}
+
+export interface CompetitorMetricValue {
+  domain: string;
+  value: number | null;
+  available: boolean;
+  unavailable_reason: string | null;
+  source: string | null;
+}
+
+export interface MetricComparison {
+  key: string;
+  layer: number;
+  label_nl: string;
+  unit: "ms" | "s" | "count" | "pct" | "score" | "eur" | "bool";
+  direction: "lower_is_better" | "higher_is_better";
+  store_value: number | null;
+  store_measured: boolean;
+  competitor_values: CompetitorMetricValue[];
+  median: number | null;
+  best: number | null;
+  best_domain: string | null;
+  p25: number | null;
+  store_rank: number | null;
+  domains_ranked: number | null;
+  store_percentile: number | null;
+  gap_to_median_abs: number | null;
+  gap_to_median_pct: number | null;
+  measured_domains: number;
+  eligible_domains: number;
+  total_domains: number;
+  coverage_label_nl: string;
+  sufficiency: "sufficient" | "thin" | "insufficient";
+  unavailable_reasons: Record<string, string>;
+}
+
+export interface LayerScore {
+  layer: number;
+  name_nl: string;
+  relative_score: number | null;
+  absolute_score: number | null;
+  metrics_used: number;
+  metrics_unavailable: number;
+  rank_in_set: number | null;
+  summary_nl: string | null;
+}
+
+export interface GapFinding {
+  finding_id: string;
+  layer: number;
+  label_nl: string;
+  store_value: number | null;
+  median_value: number | null;
+  best_value: number | null;
+  gap_to_median_eur_low: number | null;
+  gap_to_median_eur_high: number | null;
+  gap_to_best_eur_low: number | null;
+  gap_to_best_eur_high: number | null;
+  market_is_also_below_benchmark: boolean;
+  kind: "revenue" | "diagnostic";
+  confidence: "high" | "medium" | "low";
+  citation: string | null;
+  note_nl: string | null;
+}
+
+export interface CompetitorRosterEntry {
+  domain: string;
+  classification: CandidateClassification | null;
+  reason_nl: string | null;
+  measure_status: "ok" | "partial" | "unreachable" | "timeout";
+  measured_at: string | null;
+  is_shopify: boolean | null;
+  discovery_source: string | null;
+}
+
+export interface CompetitorBenchmarkData {
+  store_domain: string;
+  market: MarketInfo;
+  roster: CompetitorRosterEntry[];
+  comparisons: MetricComparison[];
+  layer_scores: LayerScore[];
+  overall_relative_score: number | null;
+  gaps: GapFinding[];
+  gap_to_median_monthly_eur_low: number | null;
+  gap_to_median_monthly_eur_high: number | null;
+  gap_to_best_monthly_eur_low: number | null;
+  gap_to_best_monthly_eur_high: number | null;
+  market_is_also_below_benchmark: boolean;
+  manually_curated: boolean;
+  // Server-side sentence explaining *how* the set was curated (added / removed / both).
+  // Null when the set is purely auto-discovered. The page renders it verbatim so the
+  // wording of the disclosure lives in one place.
+  curation_note_nl: string | null;
+  checkout_probe_included: boolean;
+  methodology_note_nl: string | null;
+  narrative_nl: string | null;
+  generated_at: string;
+}
+
+export interface CompetitorBenchmarkCreateResponse {
+  id: string;
+  status: CompetitorRunStatus;
+  created_at: string;
+}
+
+export interface CompetitorBenchmarkStatusResponse {
+  id: string;
+  status: CompetitorRunStatus;
+  store_domain: string;
+  phase_label_nl: string | null;
+  measured_count: number;
+  total_count: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface CompetitorBenchmarkResponse {
+  id: string;
+  status: CompetitorRunStatus;
+  store_domain: string;
+  data: CompetitorBenchmarkData | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface CompetitorBenchmarkCreatePayload {
+  full_audit_id: string;
+  location_code?: number | null;
+  language_code?: string | null;
+  max_competitors?: number | null;
+  include_checkout_probe?: boolean;
+}
+
+export interface CompetitorSetUpdatePayload {
+  add: string[];
+  remove: string[];
+  location_code?: number | null;
+  language_code?: string | null;
+}

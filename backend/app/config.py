@@ -22,5 +22,17 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     APP_ENV: str = "development"
 
+    # Competitor benchmark — kept low relative to SCRAPER_CONCURRENCY because
+    # BackgroundTasks runs in the same event loop/process as the API server. Measuring
+    # N domains concurrently multiplies scraper connections, PSI calls, and DNS probes
+    # against that same process; too high a value trades wall-clock for measurement
+    # failures under load (which each cost a data point in the market median).
+    COMPETITOR_CONCURRENCY: int = 2
+    COMPETITOR_MEASURE_LIMIT: int = 8
+    COMPETITOR_SCRAPER_MAX_PAGES: int = 6
+    COMPETITOR_DOMAIN_TIMEOUT_S: int = 180
+    COMPETITOR_SNAPSHOT_TTL_DAYS: int = 14
+    COMPETITOR_SNAPSHOT_NEGATIVE_TTL_DAYS: int = 2
+
 
 settings = Settings()

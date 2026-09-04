@@ -264,7 +264,9 @@ def _third_party_summary_by_domain(data: dict) -> dict[str, dict]:
     return result
 
 
-async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Performance, dict[str, dict]]:
+async def analyze_performance(
+    store_url: str, pages: list[dict], include_desktop: bool = True,
+) -> tuple[Performance, dict[str, dict]]:
     money_page = _pick_money_page(pages)
 
     # Three independent PSI calls (each a full Lighthouse run, now allowed up to 90s) —
@@ -276,7 +278,10 @@ async def analyze_performance(store_url: str, pages: list[dict]) -> tuple[Perfor
         # (confirmed: no code reads their accessibility/best-practices/seo scores) —
         # requesting just that category keeps these two calls fast even on slow sites,
         # so they don't become the bottleneck next to the necessarily-full mobile call.
-        _call_psi(store_url, strategy="desktop", categories=["performance"]),
+        # `include_desktop=False` (competitor benchmark) drops this call entirely — a
+        # 33% PSI-call saving per domain, since nothing downstream reads desktop scores
+        # in that comparison.
+        _call_psi(store_url, strategy="desktop", categories=["performance"]) if include_desktop else _no_psi_call(),
         _call_psi(money_page[0], strategy="mobile", categories=["performance"]) if money_page else _no_psi_call(),
     ]
     mobile_data, desktop_data, money_page_data = await asyncio.gather(*calls)

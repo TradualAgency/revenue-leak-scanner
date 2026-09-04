@@ -19,9 +19,12 @@ services:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
+      # These win over env_file so the container always talks to the compose
+      # network's db host/APP_ENV regardless of what a developer's local .env says.
       DATABASE_URL: postgresql+asyncpg://revleak:revleak@db:5432/revleak
-      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
       APP_ENV: development
     depends_on:
       db:

@@ -1,12 +1,10 @@
-import hmac
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.dependencies import get_db
+from app.dependencies import get_db, require_operator_key
 from app.full_audit.models import FullAudit
 from app.full_audit.schemas import (
     FullAuditCreateResponse,
@@ -18,11 +16,6 @@ from app.full_audit.schemas import (
 from app.full_audit.service import run_full_audit
 
 router = APIRouter(prefix="/api/v1/full-audit", tags=["full-audit"])
-
-
-def _require_operator_key(x_operator_key: str = Header(default="")) -> None:
-    if not settings.OPERATOR_API_KEY or not hmac.compare_digest(x_operator_key, settings.OPERATOR_API_KEY):
-        raise HTTPException(status_code=403, detail="Not authorized")
 
 
 @router.post("", response_model=FullAuditCreateResponse, status_code=201)
@@ -111,7 +104,7 @@ async def get_full_audit(
     )
 
 
-@router.get("/{audit_id}/sanity-export", dependencies=[Depends(_require_operator_key)])
+@router.get("/{audit_id}/sanity-export", dependencies=[Depends(require_operator_key)])
 async def get_full_audit_sanity_export(
     audit_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),

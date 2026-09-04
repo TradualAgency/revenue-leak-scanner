@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.competitor_benchmark.router import router as competitor_benchmark_router
 from app.config import settings
 from app.full_audit.router import router as full_audit_router
 from app.leads.router import router as leads_router
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(leads_router)
 app.include_router(reports_router)
 app.include_router(full_audit_router)
+app.include_router(competitor_benchmark_router)
 
 
 @app.get("/api/v1/health", tags=["health"])

@@ -134,8 +134,8 @@ export default function Home() {
       <Header overlay />
 
       {/* Hero */}
-      <div className="p-5 h-svh">
-        <section className="relative overflow-hidden rounded-2xl h-full flex items-center px-6 sm:px-8 py-16">
+      <div className="p-5">
+        <section className="relative overflow-hidden rounded-2xl flex items-center px-6 sm:px-8 py-16">
           <div className="absolute inset-0 bg-tradual-primary">
             <video
               className="hero-video w-full h-full object-cover"
@@ -150,7 +150,7 @@ export default function Home() {
             />
             <div className="absolute inset-0 bg-tradual-primary/75" />
           </div>
-          <div className="relative z-10 max-w-7xl mx-auto w-full">
+          <div className="relative z-10 max-w-7xl mx-auto w-full py-16 sm:pt-32 sm:pb-16">
             <p className="uppercase text-tradual-accent font-serif text-[10px] tracking-[0.18em] mb-4">
               The E-commerce Performance Company
             </p>

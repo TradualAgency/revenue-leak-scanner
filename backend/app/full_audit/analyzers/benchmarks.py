@@ -175,6 +175,20 @@ CITATIONS: dict[str, Citation] = {
         our_interpretation="Republished on a rolling basis; pin the specific "
                             "edition/quarter used before shipping.",
     ),
+    "MARKET_MEDIAN_BENCHMARK": Citation(
+        source="Tradual competitor benchmark — live measurement of the audited store's "
+               "own discovered competitor set",
+        figure="Store's own metric value vs. the measured median/best of its competitor set",
+        applies_to="competitor_benchmark gap.* findings (gap-to-market euro figures)",
+        our_interpretation=(
+            "This is a first-party measurement, not an extrapolation from a published "
+            "study — the cited 'benchmark' is literally what the store's own market was "
+            "observed to achieve. Still subject to the same funnel exposure/uplift model "
+            "as every other finding, and only priced when at least 3 competitors were "
+            "successfully measured on the metric in question."
+        ),
+        verified=True,
+    ),
     "INTERNAL_ESTIMATE": Citation(
         source="No external source",
         figure="n/a",

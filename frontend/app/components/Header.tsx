@@ -1,7 +1,7 @@
 export default function Header({ overlay = false }: { overlay?: boolean }) {
   if (overlay) {
     return (
-      <div className="fixed top-6 lg:top-12 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8">
+      <div className="fixed top-6 lg:top-12 left-0 right-0 z-50 px-5 sm:px-6 lg:px-8">
         <header className="max-w-7xl mx-auto bg-tradual-primary/10 backdrop-blur-md border border-tradual-primary/15 rounded-2xl shadow-sm px-6 sm:px-8 py-4 text-white">
           <div className="flex items-center justify-between">
             <a href="/" className="text-lg uppercase font-bold text-white">

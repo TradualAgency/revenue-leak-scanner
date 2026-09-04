@@ -1,29 +1,19 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse
 
 import aiohttp
 
 from app.config import settings
+from app.domains import extract_domain
 from app.full_audit.schemas import SeRankingTraffic
 
 logger = logging.getLogger(__name__)
 
 _API_BASE = "https://api.seranking.com/v1"
 _TIMEOUT = aiohttp.ClientTimeout(total=15.0)
-# Platforms whose root domain carries traffic for all stores — subdomains are store-specific,
-# so we must NOT roll up to the root.
-_SHARED_PLATFORMS = {"myshopify.com", "squarespace.com", "wixsite.com", "webflow.io"}
 
-
-def extract_domain(url: str) -> str:
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    host = (parsed.hostname or url).lower().removeprefix("www.")
-    for platform in _SHARED_PLATFORMS:
-        if host.endswith(f".{platform}") or host == platform:
-            return host
-    return host
+__all__ = ["extract_domain", "fetch_traffic_estimates"]
 
 
 async def fetch_traffic_estimates(store_url: str) -> SeRankingTraffic | None:

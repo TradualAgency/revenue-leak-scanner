@@ -34,3 +34,14 @@ dev = [
     "pytest-asyncio (>=1.3.0,<2.0.0)",
     "httpx (>=0.28.1,<0.29.0)"
 ]
+
+[tool.pytest.ini_options]
+# The async engine in conftest.py's `setup_database`/`db_session` fixtures is
+# session-scoped and lazily opens its first asyncpg connection inside whichever
+# event loop is active at that point. pytest-asyncio's default (a fresh loop per
+# test function) would then reuse that pooled connection under a *different* loop
+# on the next DB-touching test, which asyncpg rejects. Scoping both the fixture and
+# test loop to the session keeps every DB-backed test on the same loop the engine
+# was first used in.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

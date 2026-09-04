@@ -60,9 +60,10 @@ def extract_internal_links(html: str, base_url: str, max_links: int = 30) -> lis
     return links
 
 
-async def scrape_store(store_url: str) -> dict:
+async def scrape_store(store_url: str, max_pages: int | None = None) -> dict:
     """
-    Scrape the store homepage and up to SCRAPER_MAX_PAGES internal pages.
+    Scrape the store homepage and up to `max_pages` (default SCRAPER_MAX_PAGES)
+    internal pages.
 
     Returns:
         {
@@ -71,6 +72,7 @@ async def scrape_store(store_url: str) -> dict:
             "pages_discovered": int,
         }
     """
+    effective_max_pages = max_pages if max_pages is not None else settings.SCRAPER_MAX_PAGES
     connector = aiohttp.TCPConnector(limit=settings.SCRAPER_CONCURRENCY)
     timeout = aiohttp.ClientTimeout(total=settings.SCRAPER_TIMEOUT_SECONDS)
 
@@ -96,7 +98,7 @@ async def scrape_store(store_url: str) -> dict:
 
         # Discover internal links
         internal_links = extract_internal_links(homepage_html, store_url)
-        max_additional = settings.SCRAPER_MAX_PAGES - 1
+        max_additional = effective_max_pages - 1
 
         # Fetch additional pages concurrently (up to SCRAPER_CONCURRENCY at a time)
         sem = asyncio.Semaphore(settings.SCRAPER_CONCURRENCY)
