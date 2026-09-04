@@ -7,9 +7,11 @@ import {
   getFullAudit,
   getFullAuditSanityExport,
   getFullAuditStatus,
+  listCompetitorBenchmarkRuns,
   updateCompetitorSet,
 } from "~/lib/api";
 import { eur, eurRange, severityByShare } from "~/lib/format";
+import { useOperatorKey } from "~/lib/operatorKey";
 import type {
   AccessibilityHealth,
   AdTrafficImpact,
@@ -1513,27 +1515,68 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
   const [busy, setBusy] = useState(false);
   const [outcomes, setOutcomes] = useState<SeedOutcome[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(true);
+  const [runCount, setRunCount] = useState(0);
 
   const isDone = status != null && COMPETITOR_RUN_TERMINAL_STATUSES.has(status.status);
 
+  // Recover the run on mount. The run id used to live only in this component's state,
+  // so a refresh showed the pristine start form while the run carried on server-side —
+  // and the only visible action was to start a second, separately billed run.
+  useEffect(() => {
+    let cancelled = false;
+    listCompetitorBenchmarkRuns(fullAuditId)
+      .then((res) => {
+        if (cancelled || res.items.length === 0) return;
+        setRunCount(res.items.length);
+        const latest = res.items[0];
+        setRunId(latest.id);
+        setStatus({
+          id: latest.id, status: latest.status, store_domain: latest.store_domain,
+          phase_label_nl: null, measured_count: 0, total_count: 0,
+          created_at: latest.created_at, completed_at: latest.completed_at,
+        });
+      })
+      .catch(() => {
+        // Failing to recover isn't a page failure — the operator can still start one.
+      })
+      .finally(() => {
+        if (!cancelled) setRecovering(false);
+      });
+    return () => { cancelled = true; };
+  }, [fullAuditId]);
+
+  // Self-scheduling poll. Deliberately NOT keyed on `status`: the previous version was,
+  // which meant a throwing request left `status` untouched, the effect never re-ran and
+  // polling died silently — despite a comment claiming the next tick would retry. There
+  // was no next tick. The first tick fires immediately so a recovered run doesn't sit
+  // blank for three seconds.
   useEffect(() => {
     if (!runId || isDone) return;
-    const t = setTimeout(async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    async function tick() {
       try {
-        setStatus(await getCompetitorBenchmarkStatus(runId));
+        const next = await getCompetitorBenchmarkStatus(runId!);
+        if (!cancelled) setStatus(next);
       } catch {
-        // transient poll error — the next tick will retry
+        // keep polling — a transient failure must not stop the loop
+      } finally {
+        if (!cancelled) timer = setTimeout(tick, 3000);
       }
-    }, 3000);
-    return () => clearTimeout(t);
-  }, [runId, status, isDone]);
+    }
+
+    tick();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [runId, isDone]);
 
   useEffect(() => {
     if (!runId || !isDone) return;
     getCompetitorCandidates(runId).then(setCandidates);
   }, [runId, isDone]);
 
-  async function handleStart() {
+  async function handleStart(allowDuplicate = false) {
     setStarting(true);
     setError(null);
     setOutcomes([]);
@@ -1541,9 +1584,13 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
       const res = await createCompetitorBenchmark({
         full_audit_id: fullAuditId,
         seed_domains: splitDomainInput(seedInput),
+        allow_duplicate: allowDuplicate,
       });
       setRunId(res.id);
       setOutcomes(res.outcomes);
+      // The server hands back an existing run rather than billing a second one. Say so
+      // instead of pretending a new run started.
+      setError(res.reused ? "Er liep al een marktvergelijking voor deze audit — hervat." : null);
       setStatus({
         id: res.id, status: res.status, store_domain: "", phase_label_nl: null,
         measured_count: 0, total_count: 0, created_at: res.created_at, completed_at: null,
@@ -1593,7 +1640,8 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
 
   return (
     <SectionCard title="Marktvergelijking">
-      {!runId && (
+      {recovering && <p className="text-sm text-gray-400">Bestaande run zoeken…</p>}
+      {!recovering && !runId && (
         <>
           <p className="text-sm text-gray-500 mb-4">
             Meet automatisch gevonden concurrenten op snelheid, stack, checkout-frictie, tracking en toekomstgereedheid — met een euro-gat t.o.v. de marktmediaan als kop.
@@ -1612,13 +1660,18 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
             Eén per regel. Deze worden met voorrang gemeten; discovery vult de rest aan.
           </p>
           <button
-            onClick={handleStart}
+            onClick={() => handleStart()}
             disabled={starting}
             className="bg-tradual-accent text-tradual-primary text-sm font-medium px-8 py-3 hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {starting ? "Starten…" : "Start marktvergelijking"}
           </button>
         </>
+      )}
+      {runCount > 1 && (
+        <p className="text-xs text-amber-700 mb-3">
+          Deze audit heeft {runCount} marktvergelijkingen. Hieronder staat de nieuwste.
+        </p>
       )}
       {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
       <SeedOutcomeList outcomes={outcomes} />
@@ -1636,14 +1689,26 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
       )}
       {isDone && runId && (
         <div className="mt-4 space-y-4">
-          <a
-            href={`/marktvergelijking/${runId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-[#c5a96f] hover:underline font-medium"
-          >
-            Bekijk prospect-pagina →
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href={`/marktvergelijking/${runId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-[#c5a96f] hover:underline font-medium"
+            >
+              Bekijk prospect-pagina →
+            </a>
+            {/* Starting again normally re-uses this run rather than billing a second
+                DataForSEO pass. This is the deliberate escape hatch for when the market
+                or the seed set genuinely changed. */}
+            <button
+              onClick={() => handleStart(true)}
+              disabled={starting}
+              className="text-xs text-gray-400 hover:text-tradual-primary hover:underline disabled:opacity-50"
+            >
+              Volledig nieuwe run starten
+            </button>
+          </div>
           {candidates && (
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
@@ -1975,6 +2040,9 @@ function SanityExportSection({ data }: { data: Record<string, unknown> }) {
 
 export default function FullAuditResults() {
   const { auditId } = useParams<{ auditId: string }>();
+  // This URL is a shareable capability link, so a prospect can be on this page. The
+  // operator-only sections render on key presence, not on the URL.
+  const operatorKey = useOperatorKey();
   const [statusData, setStatusData] = useState<FullAuditStatusResponse | null>(null);
   const [auditData, setAuditData] = useState<FullAuditData | null>(null);
   const [sanityExport, setSanityExport] = useState<Record<string, unknown> | null>(null);
@@ -2171,7 +2239,7 @@ export default function FullAuditResults() {
                 </>
               )}
               {auditData.competitor_benchmark && <CompetitorBenchmarkSection data={auditData.competitor_benchmark} />}
-              {auditId && <CompetitorBenchmarkPanel fullAuditId={auditId} />}
+              {auditId && operatorKey && <CompetitorBenchmarkPanel fullAuditId={auditId} />}
               {auditData.third_party_scripts && <ThirdPartySection data={auditData.third_party_scripts} />}
               {auditData.tracking_data_quality && <TrackingSection data={auditData.tracking_data_quality} />}
               {auditData.checkout_flow && <CheckoutSection data={auditData.checkout_flow} />}

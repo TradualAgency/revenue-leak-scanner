@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.competitor_benchmark.models import CompetitorBenchmarkRun
 from app.competitor_benchmark.schemas import (
+    BenchmarkRunSummary,
     CompetitorBenchmarkCreateRequest,
     CompetitorBenchmarkCreateResponse,
     CompetitorBenchmarkData,
@@ -14,11 +15,13 @@ from app.competitor_benchmark.schemas import (
     CompetitorCandidatesResponse,
     CompetitorRemeasureRequest,
     CompetitorRosterEntry,
+    CompetitorRunListResponse,
     CompetitorRunStatus,
     CompetitorSetUpdateRequest,
     CompetitorSetUpdateResponse,
     DiscoveryResult,
     MarketInfo,
+    SeedOutcome,
 )
 from app.competitor_benchmark.seeds import resolve_seeds
 from app.competitor_benchmark.service import (
@@ -32,7 +35,14 @@ from app.dependencies import get_db, require_operator_key
 from app.domains import extract_domain
 from app.full_audit.models import FullAudit
 
+# require_operator_key is applied per route, NOT on this constructor: `GET /{run_id}`
+# and `GET /{run_id}/status` are deliberately public so the prospect report page can
+# poll and render its own benchmark.
 router = APIRouter(prefix="/api/v1/competitor-benchmark", tags=["competitor-benchmark"])
+
+# One page of history is plenty for a per-audit list; a run is an expensive, deliberate
+# act and no audit is ever going to have hundreds.
+_RUN_LIST_CAP = 50
 
 _PHASE_LABELS_NL: dict[str, str] = {
     "queued": "In wachtrij",
@@ -45,10 +55,36 @@ _PHASE_LABELS_NL: dict[str, str] = {
 }
 
 
+async def _latest_run_for_audit(audit_id: uuid.UUID, db: AsyncSession):
+    """Newest run for an audit, or None.
+
+    Explicit columns, not `select(CompetitorBenchmarkRun)`: a finished run's
+    `benchmark_data` is the whole comparison payload and nothing here needs it.
+
+    `id DESC` after `created_at DESC` because `created_at` defaults to
+    `transaction_timestamp()`, which is constant within a transaction — rows written
+    together are genuinely tied and need a deterministic second key.
+    """
+    result = await db.execute(
+        select(
+            CompetitorBenchmarkRun.id,
+            CompetitorBenchmarkRun.status,
+            CompetitorBenchmarkRun.created_at,
+            CompetitorBenchmarkRun.seed_domains,
+            CompetitorBenchmarkRun.seed_outcomes,
+        )
+        .where(CompetitorBenchmarkRun.full_audit_id == audit_id)
+        .order_by(CompetitorBenchmarkRun.created_at.desc(), CompetitorBenchmarkRun.id.desc())
+        .limit(1)
+    )
+    return result.first()
+
+
 @router.post("", response_model=CompetitorBenchmarkCreateResponse, status_code=201, dependencies=[Depends(require_operator_key)])
 async def create_competitor_benchmark(
     body: CompetitorBenchmarkCreateRequest,
     background_tasks: BackgroundTasks,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> CompetitorBenchmarkCreateResponse:
     audit_result = await db.execute(select(FullAudit).where(FullAudit.id == body.full_audit_id))
@@ -57,6 +93,34 @@ async def create_competitor_benchmark(
         raise HTTPException(status_code=404, detail="Full audit not found")
     if audit.status != "ready_for_review":
         raise HTTPException(status_code=409, detail="Full audit is not yet ready")
+
+    if not body.allow_duplicate:
+        existing = await _latest_run_for_audit(audit.id, db)
+        if existing is not None:
+            # Hand the existing run back (200 + reused) instead of 409. A 409 says "no"
+            # and leaves the caller hunting for the run id — which is the exact failure
+            # that produced two paid runs for barts.eu. Returning it honours the
+            # intent ("I want a benchmark for this audit") and makes the button
+            # idempotent.
+            #
+            # This covers finished runs too: re-measuring on purpose is already
+            # `POST /{run_id}/remeasure`, which reuses the same row. A genuinely new
+            # run is only right when the market or the seeds change fundamentally —
+            # that is what `allow_duplicate` is for.
+            #
+            # No partial unique index backs this up. One would make `remeasure` (which
+            # sets status="measuring" on an existing row) fail with an unactionable
+            # constraint error. With a single operator and BackgroundTasks inside one
+            # process, the race is theoretical; this stays an application-level guard.
+            response.status_code = 200
+            return CompetitorBenchmarkCreateResponse(
+                id=existing.id,
+                status=existing.status,  # type: ignore[arg-type]
+                created_at=existing.created_at,
+                seed_domains=existing.seed_domains or [],
+                outcomes=[SeedOutcome.model_validate(o) for o in (existing.seed_outcomes or [])],
+                reused=True,
+            )
 
     store_domain = extract_domain(audit.store_url)
     # Never above the ceiling: COMPETITOR_CONCURRENCY=2 x COMPETITOR_DOMAIN_TIMEOUT_S=180
@@ -87,6 +151,49 @@ async def create_competitor_benchmark(
     return CompetitorBenchmarkCreateResponse(
         id=run.id, status=run.status, created_at=run.created_at,  # type: ignore[arg-type]
         seed_domains=seed_domains, outcomes=outcomes,
+    )
+
+
+@router.get("", response_model=CompetitorRunListResponse, dependencies=[Depends(require_operator_key)])
+async def list_competitor_benchmark_runs(
+    full_audit_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> CompetitorRunListResponse:
+    """All runs for one audit, newest first.
+
+    The FK `full_audit_id` has existed and been indexed since the table was created,
+    but nothing ever read it in this direction — which is why refreshing the audit page
+    lost the run and offered to start (and pay for) another one.
+
+    All of them, not just the newest: the panel takes `[0]`, and the `xN` badge in the
+    scan list needs somewhere to link.
+
+    Explicit columns only — `benchmark_data` and `discovery_json` are JSONB and are not
+    list data.
+    """
+    result = await db.execute(
+        select(
+            CompetitorBenchmarkRun.id,
+            CompetitorBenchmarkRun.status,
+            CompetitorBenchmarkRun.store_domain,
+            CompetitorBenchmarkRun.created_at,
+            CompetitorBenchmarkRun.completed_at,
+        )
+        .where(CompetitorBenchmarkRun.full_audit_id == full_audit_id)
+        .order_by(CompetitorBenchmarkRun.created_at.desc(), CompetitorBenchmarkRun.id.desc())
+        .limit(_RUN_LIST_CAP)
+    )
+    return CompetitorRunListResponse(
+        items=[
+            BenchmarkRunSummary(
+                id=row.id,
+                status=row.status,  # type: ignore[arg-type]
+                store_domain=row.store_domain,
+                created_at=row.created_at,
+                completed_at=row.completed_at,
+            )
+            for row in result.all()
+        ]
     )
 
 

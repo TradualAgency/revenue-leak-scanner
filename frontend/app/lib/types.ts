@@ -881,6 +881,8 @@ export interface CompetitorBenchmarkCreateResponse {
   created_at: string;
   seed_domains: string[];
   outcomes: SeedOutcome[];
+  // True when an existing run was handed back rather than a new one created.
+  reused: boolean;
 }
 
 export interface CompetitorSetUpdateResponse {
@@ -913,6 +915,42 @@ export interface CompetitorBenchmarkResponse {
   completed_at: string | null;
 }
 
+// --- Operator overview (/scans) ----------------------------------------------------
+
+export interface BenchmarkRunSummary {
+  id: string;
+  status: CompetitorRunStatus;
+  store_domain: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+// Deliberately carries no `data` / `audit_data`: the list renders name, date and status
+// for every audit, and the audit payload is a multi-megabyte JSONB blob per row.
+export interface FullAuditListItem {
+  id: string;
+  store_url: string;
+  company_name: string | null;
+  industry: string | null;
+  scan_level: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+  latest_benchmark: BenchmarkRunSummary | null;
+  benchmark_run_count: number;
+}
+
+export interface FullAuditListResponse {
+  items: FullAuditListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CompetitorRunListResponse {
+  items: BenchmarkRunSummary[];
+}
+
 export interface CompetitorBenchmarkCreatePayload {
   full_audit_id: string;
   location_code?: number | null;
@@ -922,6 +960,9 @@ export interface CompetitorBenchmarkCreatePayload {
   // Known competitors, measured with priority over anything discovery finds. Also the
   // only way to run a benchmark when DataForSEO is unavailable.
   seed_domains?: string[];
+  // Force a genuinely new run. Without it the endpoint returns the audit's existing run
+  // (`reused: true`) instead of spending a second DataForSEO budget on the same audit.
+  allow_duplicate?: boolean;
   include_checkout_probe?: boolean;
 }
 

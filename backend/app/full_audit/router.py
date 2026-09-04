@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_operator_key
 from app.full_audit.models import FullAudit
+from app.full_audit.overview import FullAuditListResponse, list_full_audits
 from app.full_audit.schemas import (
     FullAuditCreateResponse,
     FullAuditData,
@@ -18,7 +19,10 @@ from app.full_audit.service import run_full_audit
 router = APIRouter(prefix="/api/v1/full-audit", tags=["full-audit"])
 
 
-@router.post("", response_model=FullAuditCreateResponse, status_code=201)
+@router.post(
+    "", response_model=FullAuditCreateResponse, status_code=201,
+    dependencies=[Depends(require_operator_key)],
+)
 async def create_full_audit(
     body: FullAuditRequest,
     background_tasks: BackgroundTasks,
@@ -50,6 +54,19 @@ async def create_full_audit(
         status=audit.status,  # type: ignore[arg-type]
         created_at=audit.created_at,
     )
+
+
+@router.get("", response_model=FullAuditListResponse, dependencies=[Depends(require_operator_key)])
+async def get_full_audit_list(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: str | None = Query(None, max_length=200),
+    db: AsyncSession = Depends(get_db),
+) -> FullAuditListResponse:
+    """Every stored audit, newest first. Operator-only, unlike the two `/{audit_id}`
+    reads below — those stay reachable by anyone holding the audit link, but a list of
+    every prospect we have ever scanned is not shareable data."""
+    return await list_full_audits(db, limit=limit, offset=offset, q=q)
 
 
 @router.get("/{audit_id}/status", response_model=FullAuditStatusResponse)

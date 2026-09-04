@@ -1,17 +1,17 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select
 
 from app.competitor_benchmark import router as competitor_router
 from app.competitor_benchmark.models import CompetitorBenchmarkRun
 from app.config import settings
-from app.full_audit.models import FullAudit
 
 pytestmark = pytest.mark.asyncio
 
 OPERATOR = {"X-Operator-Key": settings.OPERATOR_API_KEY}
-STORE_URL = "https://store.nl"
 
 
 @pytest.fixture(autouse=True)
@@ -25,16 +25,12 @@ def no_background_work(monkeypatch):
     monkeypatch.setattr(competitor_router, "measure_competitor_set", noop)
 
 
-@pytest_asyncio.fixture
-async def ready_audit(db_session):
-    audit = FullAudit(
-        id=uuid.uuid4(), store_url=STORE_URL, scan_level="outside-only",
-        status="ready_for_review",
-        audit_data={"store_url": STORE_URL, "scan_level": "outside-only"},
-    )
-    db_session.add(audit)
-    await db_session.commit()
-    return audit
+async def _run_count_for(db_session, audit_id) -> int:
+    return (await db_session.execute(
+        select(func.count()).select_from(CompetitorBenchmarkRun).where(
+            CompetitorBenchmarkRun.full_audit_id == audit_id
+        )
+    )).scalar_one()
 
 
 @pytest_asyncio.fixture
@@ -199,3 +195,117 @@ async def test_candidates_still_404s_for_an_unknown_run(client):
         f"/api/v1/competitor-benchmark/{uuid.uuid4()}/candidates", headers=OPERATOR,
     )
     assert resp.status_code == 404
+
+
+# --- finding runs back, and not paying for them twice --------------------------------
+
+
+async def test_runs_list_requires_operator_key(client):
+    resp = await client.get("/api/v1/competitor-benchmark", params={"full_audit_id": str(uuid.uuid4())})
+    assert resp.status_code == 403
+
+
+async def test_runs_list_returns_every_run_newest_first_without_the_jsonb_blobs(
+    client, db_session, ready_audit,
+):
+    older = CompetitorBenchmarkRun(
+        id=uuid.uuid4(), full_audit_id=ready_audit.id, store_domain="store.nl",
+        location_code=2528, language_code="nl", status="ready",
+        created_at=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+        benchmark_data={"store_domain": "store.nl", "roster": [{"domain": "a.nl"}]},
+        discovery_json={"kept": [{"domain": "a.nl"}]},
+    )
+    newer = CompetitorBenchmarkRun(
+        id=uuid.uuid4(), full_audit_id=ready_audit.id, store_domain="store.nl",
+        location_code=2528, language_code="nl", status="measuring",
+        created_at=datetime(2026, 9, 3, 10, 0, tzinfo=UTC),
+    )
+    db_session.add_all([older, newer])
+    await db_session.commit()
+
+    resp = await client.get(
+        "/api/v1/competitor-benchmark", params={"full_audit_id": str(ready_audit.id)}, headers=OPERATOR,
+    )
+
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert [i["id"] for i in items] == [str(newer.id), str(older.id)]
+    assert set(items[0]) == {"id", "status", "store_domain", "created_at", "completed_at"}
+    assert "benchmark_data" not in resp.text and "discovery_json" not in resp.text
+
+
+async def test_create_hands_back_the_running_run_instead_of_paying_for_a_second(
+    client, db_session, ready_audit,
+):
+    first = await client.post(
+        "/api/v1/competitor-benchmark",
+        json={"full_audit_id": str(ready_audit.id), "seed_domains": ["a.nl"]},
+        headers=OPERATOR,
+    )
+    assert first.status_code == 201
+    assert first.json()["reused"] is False
+
+    second = await client.post(
+        "/api/v1/competitor-benchmark",
+        json={"full_audit_id": str(ready_audit.id)},
+        headers=OPERATOR,
+    )
+
+    assert second.status_code == 200  # not 201, and not 409
+    assert second.json()["reused"] is True
+    assert second.json()["id"] == first.json()["id"]
+    # The seed outcomes come from the run that actually exists, not from this request.
+    assert second.json()["seed_domains"] == ["a.nl"]
+    # The whole point: no second DataForSEO discovery was enqueued, and no second row.
+    assert await _run_count_for(db_session, ready_audit.id) == 1
+
+
+async def test_create_reuses_a_finished_run_too(client, db_session, ready_audit, ready_run):
+    assert ready_run.status == "ready"
+
+    resp = await client.post(
+        "/api/v1/competitor-benchmark", json={"full_audit_id": str(ready_audit.id)}, headers=OPERATOR,
+    )
+
+    # Deliberate re-measurement is POST /{run_id}/remeasure, which reuses this row.
+    assert resp.status_code == 200
+    assert resp.json()["reused"] is True
+    assert resp.json()["id"] == str(ready_run.id)
+    assert await _run_count_for(db_session, ready_audit.id) == 1
+
+
+async def test_allow_duplicate_is_the_escape_hatch_from_the_reuse_guard(
+    client, db_session, ready_audit, ready_run,
+):
+    resp = await client.post(
+        "/api/v1/competitor-benchmark",
+        json={"full_audit_id": str(ready_audit.id), "allow_duplicate": True},
+        headers=OPERATOR,
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["reused"] is False
+    assert resp.json()["id"] != str(ready_run.id)
+    assert await _run_count_for(db_session, ready_audit.id) == 2
+
+
+async def test_reuse_picks_the_newest_run_when_several_exist(client, db_session, ready_audit):
+    base = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+    runs = [
+        CompetitorBenchmarkRun(
+            id=uuid.uuid4(), full_audit_id=ready_audit.id, store_domain="store.nl",
+            location_code=2528, language_code="nl", status="ready",
+            created_at=base + timedelta(hours=offset),
+        )
+        for offset in (0, 2, 1)
+    ]
+    db_session.add_all(runs)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/competitor-benchmark", json={"full_audit_id": str(ready_audit.id)}, headers=OPERATOR,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["id"] == str(runs[1].id)  # base + 2h
+    assert await _run_count_for(db_session, ready_audit.id) == 3

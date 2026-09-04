@@ -259,6 +259,25 @@ CompetitorRunStatus = Literal[
 ]
 
 
+class BenchmarkRunSummary(BaseModel):
+    """One run reduced to what a list can show. Lives here rather than in
+    `full_audit/overview.py` because both the runs list and the audit overview need
+    it, and this module already owns `CompetitorRunStatus`.
+
+    Carries no `benchmark_data` and no `discovery_json` on purpose — those are the two
+    JSONB columns on the row, and a list of them is megabytes for a UI that renders a
+    status pill and a date."""
+    id: uuid.UUID
+    status: CompetitorRunStatus
+    store_domain: str
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+class CompetitorRunListResponse(BaseModel):
+    items: list[BenchmarkRunSummary]
+
+
 class CompetitorBenchmarkCreateRequest(BaseModel):
     full_audit_id: uuid.UUID
     location_code: int | None = None
@@ -272,6 +291,11 @@ class CompetitorBenchmarkCreateRequest(BaseModel):
     # unavailable.
     seed_domains: list[str] = []
     include_checkout_probe: bool = False
+    # Escape hatch for the reuse guard below. Off by default because a second run for
+    # the same audit is a second paid DataForSEO discovery, and the usual reason the
+    # button gets pressed twice is that the page lost the run id — not that a genuinely
+    # new measurement was wanted.
+    allow_duplicate: bool = False
 
 
 class CompetitorBenchmarkCreateResponse(BaseModel):
@@ -280,6 +304,10 @@ class CompetitorBenchmarkCreateResponse(BaseModel):
     created_at: datetime
     seed_domains: list[str] = []
     outcomes: list[SeedOutcome] = []
+    # True when this is a pre-existing run handed back instead of a new one (HTTP 200,
+    # not 201). The UI has to say so — reporting "gestart" for a run that has been
+    # going for ten minutes is how the operator ends up waiting on the wrong thing.
+    reused: bool = False
 
 
 class CompetitorBenchmarkStatusResponse(BaseModel):

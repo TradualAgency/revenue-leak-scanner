@@ -2,3 +2,8 @@
 build
 node_modules
 README.md
+# The Dockerfile does `COPY . /app/` before `npm run build`, so any VITE_* value left
+# here would be inlined into the public client bundle. Secrets must never live in a
+# frontend .env.
+.env
+.env.*

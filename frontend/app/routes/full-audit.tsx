@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { createFullAudit } from "~/lib/api";
 import type { ScanLevel } from "~/lib/types";
 import Header from "~/components/Header";
+import OperatorGate from "~/components/operator/OperatorGate";
 import Footer from "~/components/Footer";
 
 export function meta() {
@@ -30,7 +31,18 @@ const SCAN_LEVELS: { value: ScanLevel; label: string; desc: string }[] = [
   },
 ];
 
-export default function FullAuditIntake() {
+// Starting an audit spends PageSpeed, Anthropic, SE Ranking and DataForSEO budget, so
+// the form sits behind the operator key — the page already called itself "Intern
+// gebruik", it just wasn't enforced. The POST is key-gated server-side too.
+export default function FullAuditIntakePage() {
+  return (
+    <OperatorGate>
+      <FullAuditIntake />
+    </OperatorGate>
+  );
+}
+
+function FullAuditIntake() {
   const navigate = useNavigate();
   const [storeUrl, setStoreUrl] = useState("");
   const [companyName, setCompanyName] = useState("");
