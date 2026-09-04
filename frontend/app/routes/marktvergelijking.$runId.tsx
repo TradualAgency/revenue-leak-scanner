@@ -1,7 +1,20 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
+import {
+  NextStepsSection,
+  relevantStepsFromBenchmark,
+} from "~/components/NextSteps";
+import HeroFigure from "~/components/report/HeroFigure";
+import KpiTile from "~/components/report/KpiTile";
+import Notice from "~/components/report/Notice";
+import ReportCard from "~/components/report/ReportCard";
+import ReportShell from "~/components/report/ReportShell";
+import ReportSpinner from "~/components/report/ReportSpinner";
+import SectionLabel from "~/components/report/SectionLabel";
+import StatusPill from "~/components/report/StatusPill";
+import type { PillTone } from "~/components/report/tone";
 import { getCompetitorBenchmark, getCompetitorBenchmarkStatus } from "~/lib/api";
-import { eur, eurRange, eurRangeParts } from "~/lib/format";
+import { eurRange, eurRangeParts, formatMetricValue } from "~/lib/format";
 import type {
   CompetitorBenchmarkData,
   CompetitorBenchmarkStatusResponse,
@@ -20,25 +33,6 @@ const PHASE_LABELS_NL: Record<string, string> = {
   scoring: "Resultaten berekenen",
 };
 
-function formatMetricValue(value: number | null, unit: MetricComparison["unit"]): string {
-  if (value == null) return "—";
-  switch (unit) {
-    case "ms":
-      return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
-    case "s":
-      return `${value.toFixed(1)}s`;
-    case "pct":
-      return `${Math.round(value)}%`;
-    case "score":
-      return `${Math.round(value)}/100`;
-    case "eur":
-      return eur(value);
-    case "count":
-    default:
-      return Number.isInteger(value) ? `${value}` : value.toFixed(1);
-  }
-}
-
 function classificationLabel(c: string | null): string {
   switch (c) {
     case "direct": return "Directe concurrent";
@@ -48,58 +42,64 @@ function classificationLabel(c: string | null): string {
   }
 }
 
-function statusPill(status: CompetitorRosterEntry["measure_status"]) {
-  const map: Record<string, { label: string; cls: string }> = {
-    ok: { label: "gemeten", cls: "bg-emerald-900/40 border-emerald-700/50 text-emerald-400" },
-    partial: { label: "deels gemeten", cls: "bg-amber-900/30 border-amber-700/40 text-amber-400" },
-    unreachable: { label: "niet bereikbaar", cls: "bg-white/5 border-white/10 text-white/30" },
-    timeout: { label: "timeout", cls: "bg-white/5 border-white/10 text-white/30" },
-  };
-  const m = map[status] ?? map.unreachable;
-  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${m.cls}`}>{m.label}</span>;
+const MEASURE_STATUS: Record<string, { label: string; tone: PillTone }> = {
+  ok: { label: "gemeten", tone: "ok" },
+  partial: { label: "deels gemeten", tone: "warning" },
+  unreachable: { label: "niet bereikbaar", tone: "muted" },
+  timeout: { label: "timeout", tone: "muted" },
+};
+
+function MeasureStatusPill({ status }: { status: CompetitorRosterEntry["measure_status"] }) {
+  const m = MEASURE_STATUS[status] ?? MEASURE_STATUS.unreachable;
+  return <StatusPill tone={m.tone}>{m.label}</StatusPill>;
 }
 
 function CoverageNotice({ data }: { data: CompetitorBenchmarkData }) {
   const total = data.roster.length;
   const measured = data.roster.filter((r) => r.measure_status === "ok" || r.measure_status === "partial").length;
+  // The server phrases the disclosure now (added / removed / both). Runs from before
+  // that field existed fall back to the single generic sentence they shipped with.
+  const curationNote =
+    data.curation_note_nl ??
+    (data.manually_curated
+      ? "Deze selectie is handmatig samengesteld door Tradual — geen automatisch marktgemiddelde."
+      : null);
   return (
-    <div className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
-      <p className="text-xs text-white/50 leading-relaxed">
-        Gebaseerd op <span className="text-white/80 font-medium">{measured} van de {total}</span> geselecteerde concurrenten die succesvol gemeten konden worden.
-        {data.manually_curated && (
-          <span className="text-[#c5a96f]/80"> Deze selectie is handmatig samengesteld door Tradual — geen automatisch marktgemiddelde.</span>
-        )}
+    <ReportCard className="p-4">
+      <p className="text-xs text-gray-500 leading-relaxed">
+        Gebaseerd op <span className="text-gray-900 font-medium">{measured} van de {total}</span> geselecteerde concurrenten die succesvol gemeten konden worden.
+        {curationNote && <span className="text-gray-700"> {curationNote}</span>}
       </p>
-    </div>
+    </ReportCard>
   );
 }
 
 function CompetitorRoster({ roster }: { roster: CompetitorRosterEntry[] }) {
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
+    <ReportCard className="overflow-hidden">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-white/10 bg-white/[0.02]">
+          <tr className="border-b border-gray-100 bg-gray-50">
             {["Domein", "Type", "Reden", "Status", "Gemeten op"].map((h) => (
-              <th key={h} className="text-left py-2 px-3 text-white/30 font-medium uppercase tracking-wide text-[10px]">{h}</th>
+              <th key={h} className="text-left py-2 px-3 text-gray-400 font-medium uppercase tracking-wide text-[10px]">{h}</th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-gray-100">
           {roster.map((r) => (
-            <tr key={r.domain} className="border-b border-white/5 last:border-0">
-              <td className="py-2 px-3 text-white/80 font-medium">{r.domain}</td>
-              <td className="py-2 px-3 text-white/40">{classificationLabel(r.classification)}</td>
-              <td className="py-2 px-3 text-white/40 max-w-[280px]">{r.reason_nl}</td>
-              <td className="py-2 px-3">{statusPill(r.measure_status)}</td>
-              <td className="py-2 px-3 text-white/25 tabular-nums whitespace-nowrap">
+            <tr key={r.domain}>
+              <td className="py-2 px-3 text-gray-900 font-medium">{r.domain}</td>
+              <td className="py-2 px-3 text-gray-500">{classificationLabel(r.classification)}</td>
+              <td className="py-2 px-3 text-gray-500 max-w-[280px]">{r.reason_nl}</td>
+              <td className="py-2 px-3"><MeasureStatusPill status={r.measure_status} /></td>
+              <td className="py-2 px-3 text-gray-400 tabular-nums whitespace-nowrap">
                 {r.measured_at ? new Date(r.measured_at).toLocaleDateString("nl-NL") : "—"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </ReportCard>
   );
 }
 
@@ -114,36 +114,37 @@ function MetricComparisonRow({ m }: { m: MetricComparison }) {
       : null;
 
   return (
-    <div className="py-2.5 border-b border-white/5 last:border-0">
+    <div className="py-2.5 border-b border-gray-100 last:border-0">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-xs font-medium text-white/75 flex-shrink-0">{m.label_nl}</p>
+        <p className="text-xs font-medium text-gray-700 flex-shrink-0">{m.label_nl}</p>
         <div className="flex items-center gap-4 text-right flex-shrink-0">
           <div className="w-16">
-            <p className={`text-sm font-bold tabular-nums ${storeBeatsMedian === false ? "text-red-400" : storeBeatsMedian === true ? "text-emerald-400" : "text-white/60"}`}>
+            <p className={`text-sm font-bold tabular-nums ${storeBeatsMedian === false ? "text-[#EF4444]" : storeBeatsMedian === true ? "text-[#0a2f23]" : "text-gray-500"}`}>
               {m.store_measured ? formatMetricValue(m.store_value, m.unit) : "—"}
             </p>
-            <p className="text-[9px] text-white/25 uppercase tracking-wide">jij</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide">jij</p>
           </div>
           <div className="w-16">
-            <p className="text-sm text-white/50 tabular-nums">{formatMetricValue(m.median, m.unit)}</p>
-            <p className="text-[9px] text-white/25 uppercase tracking-wide">mediaan</p>
+            <p className="text-sm text-gray-700 tabular-nums">{formatMetricValue(m.median, m.unit)}</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide">mediaan</p>
           </div>
           <div className="w-20">
-            <p className="text-sm text-white/40 tabular-nums">
+            <p className="text-sm text-gray-500 tabular-nums">
               {formatMetricValue(m.best, m.unit)}
-              {m.best_domain && <span className="text-[9px] text-white/20 ml-1">({m.best_domain})</span>}
+              {m.best_domain && <span className="text-[9px] text-gray-400 ml-1">({m.best_domain})</span>}
             </p>
-            <p className="text-[9px] text-white/25 uppercase tracking-wide">beste</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide">beste</p>
           </div>
           <div className="w-14">
-            <p className="text-sm font-semibold text-[#c5a96f] tabular-nums">
+            {/* Rank was gold. At 14px gold sits at ~2:1 on #FAFAF8, so it can't stay. */}
+            <p className="text-sm font-semibold text-gray-900 tabular-nums">
               {storeIsBest ? "1e" : m.store_rank && m.domains_ranked ? `${m.store_rank}e/${m.domains_ranked}` : "—"}
             </p>
-            <p className="text-[9px] text-white/25 uppercase tracking-wide">positie</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide">positie</p>
           </div>
         </div>
       </div>
-      <p className="text-[10px] text-white/20 mt-1">{m.coverage_label_nl}</p>
+      <p className="text-[10px] text-gray-500 mt-1">{m.coverage_label_nl}</p>
     </div>
   );
 }
@@ -168,12 +169,12 @@ function ComparisonTable({ comparisons }: { comparisons: MetricComparison[] }) {
         const metrics = byLayer.get(layer) ?? [];
         if (metrics.length === 0) return null;
         return (
-          <div key={layer} className="border border-white/10 rounded-xl px-5 py-4">
-            <p className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2">{LAYER_NAMES[layer]}</p>
+          <ReportCard key={layer} className="px-5 py-4">
+            <SectionLabel className="mb-2">{LAYER_NAMES[layer]}</SectionLabel>
             {metrics.map((m) => (
               <MetricComparisonRow key={m.key} m={m} />
             ))}
-          </div>
+          </ReportCard>
         );
       })}
     </div>
@@ -184,12 +185,14 @@ function LayerScoreCards({ layerScores }: { layerScores: LayerScore[] }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       {layerScores.map((ls) => (
-        <div key={ls.layer} className="border border-white/10 rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold text-[#c5a96f] tabular-nums">
-            {ls.relative_score != null ? Math.round(ls.relative_score) : "—"}
-          </p>
-          <p className="text-[10px] text-white/30 mt-1 leading-tight">{ls.name_nl}</p>
-        </div>
+        <ReportCard key={ls.layer} className="p-4">
+          <KpiTile
+            tone="accent"
+            align="center"
+            value={ls.relative_score != null ? Math.round(ls.relative_score) : "—"}
+            label={ls.name_nl}
+          />
+        </ReportCard>
       ))}
     </div>
   );
@@ -198,19 +201,19 @@ function LayerScoreCards({ layerScores }: { layerScores: LayerScore[] }) {
 function GapMetricRow({ g }: { g: GapFinding }) {
   const hasEur = g.gap_to_median_eur_low != null && g.gap_to_median_eur_high != null;
   return (
-    <div className="flex gap-3 py-2.5 border-b border-white/5 last:border-0">
+    <div className="flex gap-3 py-2.5 border-b border-gray-100 last:border-0">
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-white/75">{g.label_nl}</p>
-        {g.note_nl && <p className="text-[11px] text-white/35 mt-0.5">{g.note_nl}</p>}
+        <p className="text-xs font-medium text-gray-700">{g.label_nl}</p>
+        {g.note_nl && <p className="text-[11px] text-gray-500 mt-0.5">{g.note_nl}</p>}
         {g.market_is_also_below_benchmark && (
-          <p className="text-[10px] text-amber-400/70 mt-0.5">Ook je markt zit onder de algemene norm — dit is het gat tot wat er al aantoonbaar haalbaar is.</p>
+          <p className="text-[10px] text-amber-600 mt-0.5">Ook je markt zit onder de algemene norm — dit is het gat tot wat er al aantoonbaar haalbaar is.</p>
         )}
       </div>
       <div className="text-right flex-shrink-0">
         {hasEur ? (
-          <p className="text-sm font-bold tabular-nums text-red-400">{eurRange(g.gap_to_median_eur_low, g.gap_to_median_eur_high)}</p>
+          <p className="text-sm font-bold tabular-nums text-[#EF4444]">{eurRange(g.gap_to_median_eur_low, g.gap_to_median_eur_high)}</p>
         ) : (
-          <p className="text-[10px] text-white/20 italic">diagnose</p>
+          <p className="text-[10px] text-gray-400 italic">diagnose</p>
         )}
       </div>
     </div>
@@ -219,11 +222,9 @@ function GapMetricRow({ g }: { g: GapFinding }) {
 
 function MarketBelowBenchmarkNotice() {
   return (
-    <div className="border border-amber-500/20 bg-amber-500/5 rounded-xl p-4">
-      <p className="text-xs text-amber-400/80 leading-relaxed">
-        Je hele markt zit onder de algemene snelheidsnorm van 2,5s. Het bedrag hieronder is bewust het gat tot wat je markt al haalt — niet tot een abstracte norm die niemand in jouw markt haalt.
-      </p>
-    </div>
+    <Notice tone="warning">
+      Je hele markt zit onder de algemene snelheidsnorm van 2,5s. Het bedrag hieronder is bewust het gat tot wat je markt al haalt — niet tot een abstracte norm die niemand in jouw markt haalt.
+    </Notice>
   );
 }
 
@@ -234,7 +235,7 @@ function HeroGap({ data }: { data: CompetitorBenchmarkData }) {
 
   if (!hasGap) {
     return (
-      <p className="text-white/40 mt-4 text-sm">
+      <p className="text-gray-500 mt-4 text-sm">
         Onvoldoende gemeten concurrenten om een marktgat in euro's te berekenen — zie de vergelijkingstabel hieronder voor de ruwe cijfers.
       </p>
     );
@@ -242,22 +243,29 @@ function HeroGap({ data }: { data: CompetitorBenchmarkData }) {
 
   return (
     <div className="mt-6 flex flex-wrap gap-6">
-      <div>
-        <p className="text-5xl font-black text-red-400 tabular-nums leading-none">
-          {parts.lead}
-          {parts.tail && <span className="text-2xl font-bold text-red-400/60 ml-2">{parts.tail}</span>}
-        </p>
-        <p className="text-sm text-white/40 mt-2">gat tot marktmediaan, per maand</p>
-      </div>
+      <HeroFigure parts={parts} size="xl" label="gat tot marktmediaan, per maand" />
       {data.gap_to_best_monthly_eur_high != null && (
-        <div>
-          <p className="text-3xl font-bold text-red-300/60 tabular-nums leading-none">
-            {bestParts.lead}
-            {bestParts.tail && <span className="text-lg font-bold text-red-300/40 ml-2">{bestParts.tail}</span>}
-          </p>
-          <p className="text-sm text-white/40 mt-2">gat tot de snelste in je markt</p>
-        </div>
+        <HeroFigure parts={bestParts} size="md" label="gat tot de snelste in je markt" />
       )}
+    </div>
+  );
+}
+
+function Cta() {
+  return (
+    <div className="print-exact bg-[#0a2f23] text-white rounded-2xl p-8 text-center">
+      <p className="text-lg font-semibold mb-2" style={{ fontFamily: "var(--font-serif)" }}>
+        Je markt haalt dit al — jij kunt het ook
+      </p>
+      <p className="text-sm text-white/70 mb-6">
+        Dit gat is niet abstract: het is wat concurrenten in jouw eigen markt vandaag al leveren.
+      </p>
+      <a
+        href="https://tradual.com/contact"
+        className="inline-block bg-tradual-accent text-tradual-primary px-8 py-3 font-medium hover:opacity-90 transition"
+      >
+        Plan een strategiegesprek
+      </a>
     </div>
   );
 }
@@ -265,15 +273,16 @@ function HeroGap({ data }: { data: CompetitorBenchmarkData }) {
 function LoadingState({ status }: { status: CompetitorBenchmarkStatusResponse | null }) {
   const label = status ? PHASE_LABELS_NL[status.status] ?? "Bezig" : "Marktvergelijking wordt gestart…";
   return (
-    <div className="min-h-screen bg-[#0e1017] flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-8 h-8 border-2 border-[#c5a96f]/30 border-t-[#c5a96f] rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-sm text-white/40">{label}…</p>
-        {status && status.total_count > 0 && (
-          <p className="text-xs text-white/25 mt-2">{status.measured_count} / {status.total_count} concurrenten gemeten</p>
-        )}
-      </div>
-    </div>
+    <ReportShell>
+      <ReportSpinner
+        label={`${label}…`}
+        sublabel={
+          status && status.total_count > 0
+            ? `${status.measured_count} / ${status.total_count} concurrenten gemeten`
+            : undefined
+        }
+      />
+    </ReportShell>
   );
 }
 
@@ -318,16 +327,20 @@ export default function MarktvergelijkingPage() {
   if (loading) return <LoadingState status={status} />;
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0e1017] flex items-center justify-center">
-        <p className="text-red-400 text-sm">{error}</p>
-      </div>
+      <ReportShell>
+        <div className="max-w-3xl mx-auto">
+          <Notice tone="danger">{error}</Notice>
+        </div>
+      </ReportShell>
     );
   }
   if (!data) {
     return (
-      <div className="min-h-screen bg-[#0e1017] flex items-center justify-center">
-        <p className="text-white/40 text-sm">Geen marktvergelijking beschikbaar.</p>
-      </div>
+      <ReportShell>
+        <div className="max-w-3xl mx-auto">
+          <Notice>Geen marktvergelijking beschikbaar.</Notice>
+        </div>
+      </ReportShell>
     );
   }
 
@@ -337,22 +350,16 @@ export default function MarktvergelijkingPage() {
   const marketBelowBenchmark = data.market_is_also_below_benchmark || (lcpGap?.market_is_also_below_benchmark ?? false);
 
   return (
-    <div className="min-h-screen bg-[#0e1017] text-white">
-      <div className="border-b border-white/8 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="font-serif text-lg text-[#c5a96f]" style={{ fontFamily: "var(--font-serif)" }}>Tradual</span>
-          <span className="text-white/20 text-xs">Marktvergelijking</span>
-        </div>
-        <p className="text-xs text-white/30 truncate max-w-[240px]">{data.store_domain}</p>
-      </div>
+    <ReportShell>
+      <div className="max-w-3xl mx-auto space-y-10">
 
-      <div className="max-w-3xl mx-auto px-6 py-12 space-y-10">
-
+        {/* Hero — the store domain and the report type used to live in a custom top bar */}
         <div>
-          <p className="text-xs text-white/30 uppercase tracking-widest mb-3">Hoe sta jij ervoor t.o.v. je markt?</p>
-          <h1 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: "var(--font-serif)" }}>
+          <SectionLabel>Hoe sta jij ervoor t.o.v. je markt?</SectionLabel>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {data.store_domain}
           </h1>
+          <p className="text-sm text-gray-500">Marktvergelijking</p>
           <HeroGap data={data} />
         </div>
 
@@ -362,64 +369,53 @@ export default function MarktvergelijkingPage() {
 
         {data.overall_relative_score != null && (
           <div>
-            <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">
+            <SectionLabel>
               Score t.o.v. je markt — {Math.round(data.overall_relative_score)}/100
-            </p>
+            </SectionLabel>
             <LayerScoreCards layerScores={data.layer_scores} />
           </div>
         )}
 
         {priceableGaps.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">Geprijsde gaten t.o.v. je markt</p>
-            <div className="border border-white/10 rounded-xl px-5 py-2">
+            <SectionLabel>Geprijsde gaten t.o.v. je markt</SectionLabel>
+            <ReportCard className="px-5 py-2">
               {priceableGaps.map((g) => (
                 <GapMetricRow key={g.finding_id} g={g} />
               ))}
-            </div>
+            </ReportCard>
           </div>
         )}
 
         {diagnosticGaps.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">Te verifiëren signalen</p>
-            <div className="border border-white/10 rounded-xl px-5 py-2">
+            <SectionLabel>Te verifiëren signalen</SectionLabel>
+            <ReportCard className="px-5 py-2">
               {diagnosticGaps.map((g) => (
                 <GapMetricRow key={g.finding_id} g={g} />
               ))}
-            </div>
+            </ReportCard>
           </div>
         )}
 
         <div>
-          <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">Concurrenten in deze vergelijking</p>
+          <SectionLabel>Concurrenten in deze vergelijking</SectionLabel>
           <CompetitorRoster roster={data.roster} />
         </div>
 
         <div>
-          <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">Volledige vergelijking per laag</p>
+          <SectionLabel>Volledige vergelijking per laag</SectionLabel>
           <ComparisonTable comparisons={data.comparisons} />
         </div>
 
+        <NextStepsSection relevant={relevantStepsFromBenchmark(data)} doneKey="audit" />
+
         {data.methodology_note_nl && (
-          <p className="text-[11px] text-white/20 italic leading-relaxed">{data.methodology_note_nl}</p>
+          <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.methodology_note_nl}</p>
         )}
 
-        <div className="border border-[#c5a96f]/20 rounded-2xl p-6 text-center bg-[#c5a96f]/5">
-          <p className="text-sm font-semibold text-white mb-1" style={{ fontFamily: "var(--font-serif)" }}>
-            Je markt haalt dit al — jij kunt het ook
-          </p>
-          <p className="text-xs text-white/40 mb-4">
-            Dit gat is niet abstract: het is wat concurrenten in jouw eigen markt vandaag al leveren.
-          </p>
-          <a
-            href="https://tradual.com/contact"
-            className="inline-block px-6 py-2.5 bg-[#c5a96f] text-[#1a1f2e] text-sm font-semibold rounded-lg hover:bg-[#d4b87e] transition-colors"
-          >
-            Plan een strategiegesprek
-          </a>
-        </div>
+        <Cta />
       </div>
-    </div>
+    </ReportShell>
   );
 }

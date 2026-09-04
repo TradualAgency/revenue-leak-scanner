@@ -735,9 +735,29 @@ export interface RejectedCandidate {
     | "min_intersections"
     | "market_coherence"
     | "ai_excluded"
-    | "enrichment_unreachable";
+    | "enrichment_unreachable"
+    | "operator_removed";
   reason_nl: string;
   category: string | null;
+}
+
+// What happened to one manually supplied domain. Reports a *decision*, never a
+// measurement — measuring happens afterwards in the background, so never render these
+// as "measured successfully".
+export interface SeedOutcome {
+  input: string;
+  domain: string | null;
+  status: "accepted" | "rejected" | "warning";
+  code:
+    | "accepted"
+    | "normalized"
+    | "duplicate"
+    | "invalid"
+    | "self"
+    | "same_brand"
+    | "blocklist"
+    | "over_limit";
+  message_nl: string;
 }
 
 export interface CompetitorCandidatesResponse {
@@ -745,6 +765,17 @@ export interface CompetitorCandidatesResponse {
   rejected: RejectedCandidate[];
   market: MarketInfo | null;
   market_note_nl: string | null;
+  // `kept` is the discovery audit trail; `selected_domains` is what is actually being
+  // measured. Render the latter — showing `kept` is how a removed competitor's chip
+  // reappeared and how a capped-out domain looked like it had been added.
+  selected_domains: string[];
+  seed_domains: string[];
+  seed_outcomes: SeedOutcome[];
+  operator_added: string[];
+  operator_removed: string[];
+  measure_limit: number;
+  discovery_available: boolean;
+  roster: CompetitorRosterEntry[];
 }
 
 export interface CompetitorMetricValue {
@@ -848,6 +879,17 @@ export interface CompetitorBenchmarkCreateResponse {
   id: string;
   status: CompetitorRunStatus;
   created_at: string;
+  seed_domains: string[];
+  outcomes: SeedOutcome[];
+}
+
+export interface CompetitorSetUpdateResponse {
+  id: string;
+  status: CompetitorRunStatus;
+  created_at: string;
+  selected_domains: string[];
+  outcomes: SeedOutcome[];
+  measure_limit: number;
 }
 
 export interface CompetitorBenchmarkStatusResponse {
@@ -875,7 +917,11 @@ export interface CompetitorBenchmarkCreatePayload {
   full_audit_id: string;
   location_code?: number | null;
   language_code?: string | null;
+  // Clamped server-side to COMPETITOR_MEASURE_LIMIT.
   max_competitors?: number | null;
+  // Known competitors, measured with priority over anything discovery finds. Also the
+  // only way to run a benchmark when DataForSEO is unavailable.
+  seed_domains?: string[];
   include_checkout_probe?: boolean;
 }
 

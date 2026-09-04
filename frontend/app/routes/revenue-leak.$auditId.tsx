@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
-import { NextStepsSection } from "~/components/NextSteps";
+import {
+  NextStepsSection,
+  relevantStepsFromRevenueLeak,
+} from "~/components/NextSteps";
+import HeroFigure from "~/components/report/HeroFigure";
+import KpiTile from "~/components/report/KpiTile";
+import Notice from "~/components/report/Notice";
+import ReportCard from "~/components/report/ReportCard";
+import ReportShell from "~/components/report/ReportShell";
+import ReportSpinner from "~/components/report/ReportSpinner";
+import SectionLabel from "~/components/report/SectionLabel";
+import StatusPill from "~/components/report/StatusPill";
 import { getFullAudit, getFullAuditStatus } from "~/lib/api";
 import { eur, eurRange, eurRangeParts, severityByShare } from "~/lib/format";
 import type {
@@ -74,11 +85,13 @@ function roiYearOneRange(roi: RoiCalculation): { low: number; high: number } {
 }
 
 function PriorityDot({ priority }: { priority: RevenueLeakMetric["priority"] }) {
+  // Bumped a step darker than the dark theme used: a 6px dot in `orange-400` /
+  // `yellow-400` all but disappears on #FAFAF8.
   const colors: Record<RevenueLeakMetric["priority"], string> = {
-    critical: "bg-red-500",
-    high: "bg-orange-400",
-    medium: "bg-yellow-400",
-    low: "bg-white/20",
+    critical: "bg-[#EF4444]",
+    high: "bg-orange-500",
+    medium: "bg-amber-500",
+    low: "bg-gray-300",
   };
   return <span className={`inline-block w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${colors[priority]}`} />;
 }
@@ -88,17 +101,13 @@ function DataConflictBanner({ conflicts }: { conflicts: DataConflict[] }) {
   return (
     <div className="space-y-2">
       {conflicts.map((c, i) => (
-        <div
+        <Notice
           key={i}
-          className={`border rounded-xl p-4 ${
-            c.severity === "critical" ? "border-red-500/30 bg-red-500/5" : "border-amber-500/30 bg-amber-500/5"
-          }`}
+          tone={c.severity === "critical" ? "danger" : "warning"}
+          title={`Tegenstrijdige invoer — ${c.ratio.toFixed(1)}x verschil`}
         >
-          <p className={`text-xs font-semibold uppercase tracking-wide mb-1 ${c.severity === "critical" ? "text-red-400" : "text-amber-400"}`}>
-            Tegenstrijdige invoer — {c.ratio.toFixed(1)}x verschil
-          </p>
-          <p className="text-xs text-white/60 leading-relaxed">{c.message_nl}</p>
-        </div>
+          {c.message_nl}
+        </Notice>
       ))}
     </div>
   );
@@ -107,11 +116,13 @@ function DataConflictBanner({ conflicts }: { conflicts: DataConflict[] }) {
 function ModelWarnings({ warnings }: { warnings: ModelWarning[] }) {
   if (warnings.length === 0) return null;
   return (
-    <div className="space-y-1.5">
-      {warnings.map((w, i) => (
-        <p key={i} className="text-[11px] text-amber-400/70 leading-relaxed">⚠ {w.detail}</p>
-      ))}
-    </div>
+    <Notice tone="warning">
+      <div className="space-y-1.5">
+        {warnings.map((w, i) => (
+          <p key={i} className="text-[11px] leading-relaxed">⚠ {w.detail}</p>
+        ))}
+      </div>
+    </Notice>
   );
 }
 
@@ -122,32 +133,32 @@ function MetricRow({ m, funnelRevenue }: { m: RevenueLeakMetric; funnelRevenue: 
   const severity = severityByShare(share, 0.01, 0.03);
 
   return (
-    <div className="flex gap-3 py-2.5 border-b border-white/5 last:border-0">
+    <div className="flex gap-3 py-2.5 border-b border-gray-100 last:border-0">
       <PriorityDot priority={m.priority} />
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-medium text-white/75">{m.metric}</p>
-            {m.signal && <p className="text-[11px] text-white/35 mt-0.5">{m.signal}</p>}
+            <p className="text-xs font-medium text-gray-700">{m.metric}</p>
+            {m.signal && <p className="text-[11px] text-gray-500 mt-0.5">{m.signal}</p>}
           </div>
           <div className="text-right flex-shrink-0">
             {m.verify_manually ? (
-              <p className="text-[10px] text-slate-400 italic border border-slate-500/30 rounded px-1.5 py-0.5 inline-block">handmatig verifiëren</p>
+              <p className="text-[10px] text-gray-500 italic border border-gray-200 rounded px-1.5 py-0.5 inline-block">handmatig verifiëren</p>
             ) : low != null && high != null ? (
               <>
-                <p className={`text-sm font-bold tabular-nums ${severity === "critical" ? "text-red-400" : severity === "warning" ? "text-orange-400" : "text-white/25"}`}>
+                <p className={`text-sm font-bold tabular-nums ${severity === "critical" ? "text-[#EF4444]" : severity === "warning" ? "text-amber-600" : "text-gray-400"}`}>
                   {high === 0 ? "—" : eurRange(low, high)}
                 </p>
                 {high > 0 && annualLow != null && annualHigh != null && (
-                  <p className="text-[10px] text-white/25 tabular-nums">{eurRange(annualLow, annualHigh)}/jr</p>
+                  <p className="text-[10px] text-gray-500 tabular-nums">{eurRange(annualLow, annualHigh)}/jr</p>
                 )}
               </>
             ) : (
-              <p className="text-[10px] text-white/20 italic">{m.kind === "diagnostic" ? "diagnose" : m.kind === "restatement" ? "herformulering" : "strategisch"}</p>
+              <p className="text-[10px] text-gray-400 italic">{m.kind === "diagnostic" ? "diagnose" : m.kind === "restatement" ? "herformulering" : "strategisch"}</p>
             )}
           </div>
         </div>
-        <p className="text-[10px] text-white/20 mt-1 leading-snug">{m.basis || m.calculation_note}</p>
+        <p className="text-[10px] text-gray-500 mt-1 leading-snug">{m.basis || m.calculation_note}</p>
       </div>
     </div>
   );
@@ -160,67 +171,67 @@ function LayerCard({ layer, funnelRevenue }: { layer: RevenueLeakLayer; funnelRe
   const kind = layer.kind ?? "revenue";
 
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
+    <ReportCard className="overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full text-left px-5 py-4 flex items-center gap-4 hover:bg-white/[0.02] transition-colors"
+        className="w-full text-left px-5 py-4 flex items-center gap-4 hover:bg-gray-50 transition-colors"
       >
-        <span className="text-xs font-mono text-white/20 w-4">{layer.layer}</span>
+        <span className="text-xs font-mono text-gray-400 w-4">{layer.layer}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-white">{layer.name}</span>
+            <span className="text-sm font-semibold text-gray-900">{layer.name}</span>
             {!isNa && high! > 0 && (
-              <span className={`text-xs font-bold tabular-nums ${kind === "cost" ? "text-amber-400" : high! > 3000 ? "text-red-400" : "text-orange-400"}`}>
+              <span className={`text-xs font-bold tabular-nums ${kind === "cost" ? "text-amber-600" : high! > 3000 ? "text-[#EF4444]" : "text-orange-600"}`}>
                 {eurRange(low, high)}/mnd
               </span>
             )}
             {(isNa || kind === "diagnostic" || kind === "restatement" || kind === "readiness") && (
-              <span className="text-xs text-[#c5a96f]/60 font-medium">
+              <span className="text-xs text-gray-500 font-medium">
                 {kind === "restatement" ? "Herformulering" : kind === "diagnostic" ? "Diagnose" : "Strategisch"}
               </span>
             )}
             {layer.unpriced_finding_count != null && layer.unpriced_finding_count > 0 && (
-              <span className="text-[10px] text-slate-400">+{layer.unpriced_finding_count} te verifiëren</span>
+              <span className="text-[10px] text-gray-500">+{layer.unpriced_finding_count} te verifiëren</span>
             )}
           </div>
-          <p className="text-xs text-white/35 mt-0.5 leading-snug">{layer.core_question}</p>
+          <p className="text-xs text-gray-500 mt-0.5 leading-snug">{layer.core_question}</p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-xs text-[#c5a96f]/50 hidden sm:block">{layer.leads_to}</span>
-          <span className="text-white/20 text-xs">{open ? "▲" : "▼"}</span>
+          <span className="text-xs text-gray-500 hidden sm:block">{layer.leads_to}</span>
+          <span className="text-gray-400 text-xs">{open ? "▲" : "▼"}</span>
         </div>
       </button>
       {open && layer.metrics.length > 0 && (
-        <div className="border-t border-white/10 px-5 py-1 bg-white/[0.015]">
+        <div className="border-t border-gray-100 px-5 py-1 bg-gray-50">
           {layer.metrics.map((m) => (
             <MetricRow key={m.metric} m={m} funnelRevenue={funnelRevenue} />
           ))}
         </div>
       )}
-    </div>
+    </ReportCard>
   );
 }
 
 function TriggerCard({ t }: { t: CeoTriggerKpi }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={`border rounded-xl overflow-hidden transition-colors ${t.triggered ? "border-red-500/30 bg-red-500/5" : "border-white/8 bg-white/[0.02]"}`}>
+    <div className={`border rounded-2xl shadow-sm overflow-hidden transition-colors ${t.triggered ? "border-red-200 bg-red-50" : "border-gray-100 bg-white"}`}>
       <button onClick={() => setOpen((o) => !o)} className="w-full text-left px-4 py-3 flex items-start gap-3">
-        <span className={`mt-0.5 flex-shrink-0 w-2 h-2 rounded-full ${t.triggered ? "bg-red-500" : "bg-white/15"}`} />
+        <span className={`mt-0.5 flex-shrink-0 w-2 h-2 rounded-full ${t.triggered ? "bg-[#EF4444]" : "bg-gray-300"}`} />
         <div className="flex-1 min-w-0">
-          <p className={`text-xs font-semibold ${t.triggered ? "text-white" : "text-white/40"}`}>{t.kpi}</p>
-          {t.triggered && <p className="text-[11px] text-white/40 mt-0.5">{t.what_ceo_sees}</p>}
+          <p className={`text-xs font-semibold ${t.triggered ? "text-gray-900" : "text-gray-500"}`}>{t.kpi}</p>
+          {t.triggered && <p className="text-[11px] text-gray-600 mt-0.5">{t.what_ceo_sees}</p>}
         </div>
-        <span className="text-white/20 text-xs flex-shrink-0">{open ? "▲" : "▼"}</span>
+        <span className="text-gray-400 text-xs flex-shrink-0">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
-        <div className="border-t border-white/10 px-4 py-3 space-y-2">
-          <p className="text-xs text-white/50 leading-relaxed">{t.real_meaning}</p>
-          <blockquote className="border-l-2 border-[#c5a96f]/40 pl-3 text-xs text-white/60 italic leading-relaxed">
+        <div className={`border-t px-4 py-3 space-y-2 ${t.triggered ? "border-red-200" : "border-gray-100"}`}>
+          <p className="text-xs text-gray-700 leading-relaxed">{t.real_meaning}</p>
+          <blockquote className="border-l-2 border-[#c5a96f] pl-3 text-xs text-gray-700 italic leading-relaxed">
             "{t.tradual_pitch}"
           </blockquote>
-          <p className="text-[11px] text-[#c5a96f]/60">Oplossing: {t.tradual_solution}</p>
-          <p className="text-[10px] text-white/25">Alarm: {t.alarm_signal}</p>
+          <p className="text-[11px] text-gray-500">Oplossing: {t.tradual_solution}</p>
+          <p className="text-[10px] text-gray-500">Alarm: {t.alarm_signal}</p>
         </div>
       )}
     </div>
@@ -238,41 +249,46 @@ function RoiBlock({ roi }: { roi: RoiCalculation }) {
   const negativeAtLowBound = yearOne.low < 0;
 
   return (
-    <div className="border border-white/10 rounded-2xl p-6 space-y-4">
-      <p className="text-xs font-semibold text-white/40 uppercase tracking-widest">ROI — Terugverdientijd Stack Rebuild™</p>
+    <ReportCard className="p-6 space-y-4">
+      <SectionLabel className="">ROI — Terugverdientijd Stack Rebuild™</SectionLabel>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div>
-          <p className="text-xl font-bold text-red-400 tabular-nums">
-            {leakParts.lead}{leakParts.tail && <span className="text-sm font-normal text-red-400/50 ml-1">{leakParts.tail}</span>}
-          </p>
-          <p className="text-[11px] text-white/35 mt-1">directe lekkage/mnd<br />(laag 1+3)</p>
-        </div>
-        <div>
-          <p className="text-xl font-bold text-red-300/70 tabular-nums">
-            {annualParts.lead}{annualParts.tail && <span className="text-sm font-normal text-red-300/40 ml-1">{annualParts.tail}</span>}
-          </p>
-          <p className="text-[11px] text-white/35 mt-1">per jaar</p>
-        </div>
-        <div>
-          <p className="text-xl font-bold text-[#c5a96f] tabular-nums">
-            {payback.best != null && payback.worst != null
-              ? payback.best === payback.worst ? `${payback.best}` : `${payback.best}–${payback.worst}`
-              : "—"}
-            <span className="text-base font-normal text-white/40 ml-1">mnd</span>
-          </p>
-          <p className="text-[11px] text-white/35 mt-1">terugverdientijd<br />({eur(roi.stack_rebuild_cost_eur)} investering)</p>
-        </div>
-        <div>
-          <p className={`text-xl font-bold tabular-nums ${negativeAtLowBound ? "text-amber-400" : "text-emerald-400"}`}>
-            {yearOneParts.lead}{yearOneParts.tail && <span className="text-sm font-normal opacity-50 ml-1">{yearOneParts.tail}</span>}
-          </p>
-          <p className="text-[11px] text-white/35 mt-1">
-            netto rendement jaar 1
-            {negativeAtLowBound && <><br /><span className="text-amber-400/70">bij ondergrens niet terugverdiend in jaar 1</span></>}
-          </p>
-        </div>
+        <KpiTile
+          tone="loss"
+          value={leakParts.lead}
+          tail={leakParts.tail}
+          label={<>directe lekkage/mnd<br />(laag 1+3)</>}
+        />
+        <KpiTile
+          tone="loss"
+          value={annualParts.lead}
+          tail={annualParts.tail}
+          label="per jaar"
+        />
+        <KpiTile
+          tone="accent"
+          value={
+            <>
+              {payback.best != null && payback.worst != null
+                ? payback.best === payback.worst ? `${payback.best}` : `${payback.best}–${payback.worst}`
+                : "—"}
+              <span className="text-base font-normal text-gray-500 ml-1">mnd</span>
+            </>
+          }
+          label={<>terugverdientijd<br />({eur(roi.stack_rebuild_cost_eur)} investering)</>}
+        />
+        <KpiTile
+          tone={negativeAtLowBound ? "warning" : "good"}
+          value={yearOneParts.lead}
+          tail={yearOneParts.tail}
+          label={
+            <>
+              netto rendement jaar 1
+              {negativeAtLowBound && <><br /><span className="text-amber-600">bij ondergrens niet terugverdiend in jaar 1</span></>}
+            </>
+          }
+        />
       </div>
-    </div>
+    </ReportCard>
   );
 }
 
@@ -291,68 +307,84 @@ function TotalsTable({ data }: { data: RevenueLeakReport }) {
   const legacyTotalAnnual = legacyAllMonetary.reduce((s, l) => s + (l.est_annual_loss_eur || 0), 0);
 
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
+    <ReportCard className="overflow-hidden">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-white/10 bg-white/[0.02]">
+          <tr className="border-b border-gray-100 bg-gray-50">
             {["Laag", "Naam", "/mnd", "/jaar"].map((h) => (
-              <th key={h} className="text-left py-2 px-3 text-white/30 font-medium uppercase tracking-wide text-[10px]">{h}</th>
+              <th key={h} className="text-left py-2 px-3 text-gray-400 font-medium uppercase tracking-wide text-[10px]">{h}</th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-gray-100">
           {data.layers.map((l) => {
             const { low, high } = layerRange(l);
             const { low: aLow, high: aHigh } = layerAnnualRange(l);
             const hasData = low != null && high != null;
             return (
-              <tr key={l.layer} className="border-b border-white/5 last:border-0">
-                <td className="py-2 px-3 text-white/20 font-mono">{l.layer}</td>
-                <td className="py-2 px-3 text-white/60">{l.name}</td>
+              <tr key={l.layer}>
+                <td className="py-2 px-3 text-gray-400 font-mono">{l.layer}</td>
+                <td className="py-2 px-3 text-gray-700">{l.name}</td>
                 <td className="py-2 px-3 tabular-nums font-semibold whitespace-nowrap">
                   {hasData
-                    ? <span className={high! > 0 ? (l.kind === "cost" ? "text-amber-400" : "text-orange-400") : "text-white/25"}>{high! > 0 ? eurRange(low, high) : "—"}</span>
-                    : <span className="text-white/20 italic text-[10px]">n.v.t.</span>
+                    ? <span className={high! > 0 ? (l.kind === "cost" ? "text-amber-600" : "text-orange-600") : "text-gray-400"}>{high! > 0 ? eurRange(low, high) : "—"}</span>
+                    : <span className="text-gray-400 italic text-[10px]">n.v.t.</span>
                   }
                 </td>
-                <td className="py-2 px-3 tabular-nums text-white/35 whitespace-nowrap">
+                <td className="py-2 px-3 tabular-nums text-gray-500 whitespace-nowrap">
                   {aLow != null && aHigh != null && aHigh > 0 ? eurRange(aLow, aHigh) : "—"}
                 </td>
               </tr>
             );
           })}
         </tbody>
-        <tfoot className="border-t border-white/15">
-          <tr className="bg-white/[0.03]">
-            <td colSpan={2} className="py-2.5 px-3 text-xs text-white/40">Directe lekkage ({isV2 ? "L1+L3" : "L1+L2+L3"})</td>
-            <td className="py-2.5 px-3 font-bold text-red-400 tabular-nums whitespace-nowrap">
+        <tfoot className="border-t border-gray-200">
+          <tr className="bg-gray-50">
+            <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-500">Directe lekkage ({isV2 ? "L1+L3" : "L1+L2+L3"})</td>
+            <td className="py-2.5 px-3 font-bold text-[#EF4444] tabular-nums whitespace-nowrap">
               {isV2 ? eurRange(direct.low, direct.high) : eur(legacyDirectMonthly)}
             </td>
-            <td className="py-2.5 px-3 text-red-300/60 tabular-nums whitespace-nowrap">
+            <td className="py-2.5 px-3 text-gray-700 tabular-nums whitespace-nowrap">
               {isV2 ? eurRange(directAnnual.low, directAnnual.high) : eur(legacyDirectAnnual)}
             </td>
           </tr>
           {!isV2 && (
-            <tr className="bg-white/[0.05]">
-              <td colSpan={2} className="py-2.5 px-3 text-xs text-white/50 font-semibold">Totaal incl. efficiëntie (L1–L4)</td>
-              <td className="py-2.5 px-3 font-bold text-red-300 tabular-nums">{eur(legacyTotalMonthly)}</td>
-              <td className="py-2.5 px-3 text-red-300/50 tabular-nums">{eur(legacyTotalAnnual)}</td>
+            <tr className="bg-gray-100">
+              <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-700 font-semibold">Totaal incl. efficiëntie (L1–L4)</td>
+              <td className="py-2.5 px-3 font-bold text-[#EF4444] tabular-nums">{eur(legacyTotalMonthly)}</td>
+              <td className="py-2.5 px-3 text-gray-700 tabular-nums">{eur(legacyTotalAnnual)}</td>
             </tr>
           )}
         </tfoot>
       </table>
+    </ReportCard>
+  );
+}
+
+function Cta() {
+  return (
+    <div className="print-exact bg-[#0a2f23] text-white rounded-2xl p-8 text-center">
+      <p className="text-lg font-semibold mb-2" style={{ fontFamily: "var(--font-serif)" }}>
+        Klaar voor de volgende stap?
+      </p>
+      <p className="text-sm text-white/70 mb-6">
+        Stap 1 heb je net gehad. Laten we bespreken wat voor jouw situatie het meest oplevert.
+      </p>
+      <a
+        href="https://tradual.com/contact"
+        className="inline-block bg-tradual-accent text-tradual-primary px-8 py-3 font-medium hover:opacity-90 transition"
+      >
+        Plan een strategiegesprek
+      </a>
     </div>
   );
 }
 
 function LoadingState() {
   return (
-    <div className="min-h-screen bg-[#0e1017] flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-8 h-8 border-2 border-[#c5a96f]/30 border-t-[#c5a96f] rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-sm text-white/40">Audit wordt uitgevoerd…</p>
-      </div>
-    </div>
+    <ReportShell>
+      <ReportSpinner label="Audit wordt uitgevoerd…" />
+    </ReportShell>
   );
 }
 
@@ -403,16 +435,20 @@ export default function RevenueLeakAuditPage() {
   if (loading) return <LoadingState />;
   if (error) {
     return (
-      <div className="min-h-screen bg-[#0e1017] flex items-center justify-center">
-        <p className="text-red-400 text-sm">{error}</p>
-      </div>
+      <ReportShell>
+        <div className="max-w-3xl mx-auto">
+          <Notice tone="danger">{error}</Notice>
+        </div>
+      </ReportShell>
     );
   }
   if (!data) {
     return (
-      <div className="min-h-screen bg-[#0e1017] flex items-center justify-center">
-        <p className="text-white/40 text-sm">Geen revenue leak data beschikbaar.</p>
-      </div>
+      <ReportShell>
+        <div className="max-w-3xl mx-auto">
+          <Notice>Geen revenue leak data beschikbaar.</Notice>
+        </div>
+      </ReportShell>
     );
   }
 
@@ -427,43 +463,23 @@ export default function RevenueLeakAuditPage() {
   const warnings = data.model_warnings ?? [];
 
   return (
-    <div className="min-h-screen bg-[#0e1017] text-white">
-      {/* Header */}
-      <div className="border-b border-white/8 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="font-serif text-lg text-[#c5a96f]" style={{ fontFamily: "var(--font-serif)" }}>Tradual</span>
-          <span className="text-white/20 text-xs">Revenue Leak Audit™</span>
-        </div>
-        <p className="text-xs text-white/30 truncate max-w-[240px]">{storeUrl}</p>
-      </div>
+    <ReportShell>
+      <div className="max-w-3xl mx-auto space-y-10">
 
-      <div className="max-w-3xl mx-auto px-6 py-12 space-y-10">
-
-        {/* Hero */}
+        {/* Hero — the report type and store URL used to live in a custom top bar */}
         <div>
-          <p className="text-xs text-white/30 uppercase tracking-widest mb-3">Rapport voor</p>
-          <h1 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: "var(--font-serif)" }}>
+          <SectionLabel>Rapport voor</SectionLabel>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {companyName || storeUrl}
           </h1>
+          <p className="text-sm text-gray-500 truncate">Revenue Leak Audit™ · {storeUrl}</p>
           {totalHigh > 0 ? (
             <div className="mt-6 flex flex-wrap gap-6">
-              <div>
-                <p className="text-5xl font-black text-red-400 tabular-nums leading-none">
-                  {heroParts.lead}
-                  {heroParts.tail && <span className="text-2xl font-bold text-red-400/60 ml-2">{heroParts.tail}</span>}
-                </p>
-                <p className="text-sm text-white/40 mt-2">geschat verlies per maand</p>
-              </div>
-              <div>
-                <p className="text-4xl font-bold text-red-300/70 tabular-nums leading-none">
-                  {heroAnnualParts.lead}
-                  {heroAnnualParts.tail && <span className="text-xl font-bold text-red-300/40 ml-2">{heroAnnualParts.tail}</span>}
-                </p>
-                <p className="text-sm text-white/40 mt-2">per jaar</p>
-              </div>
+              <HeroFigure parts={heroParts} size="xl" label="geschat verlies per maand" />
+              <HeroFigure parts={heroAnnualParts} size="lg" label="per jaar" />
             </div>
           ) : (
-            <p className="text-white/40 mt-4 text-sm">Geen direct meetbaar verlies gedetecteerd — zie strategische signalen in Laag 5.</p>
+            <p className="text-gray-500 mt-4 text-sm">Geen direct meetbaar verlies gedetecteerd — zie strategische signalen in Laag 5.</p>
           )}
         </div>
 
@@ -473,9 +489,9 @@ export default function RevenueLeakAuditPage() {
         {/* CEO Triggers */}
         {allKpis.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">
+            <SectionLabel>
               {triggeredKpis.length > 0 ? `${triggeredKpis.length} CEO-signalen herkend` : "CEO Trigger KPI's"}
-            </p>
+            </SectionLabel>
             <div className="space-y-2">
               {allKpis.map((t) => (
                 <TriggerCard key={t.kpi} t={t} />
@@ -486,7 +502,7 @@ export default function RevenueLeakAuditPage() {
 
         {/* De 5 Lagen */}
         <div>
-          <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">De 5 Meetlagen</p>
+          <SectionLabel>De 5 Meetlagen</SectionLabel>
           <div className="space-y-2">
             {data.layers.map((layer) => (
               <LayerCard key={layer.layer} layer={layer} funnelRevenue={funnelRevenue} />
@@ -496,7 +512,7 @@ export default function RevenueLeakAuditPage() {
 
         {/* Revenue Leak Score Totaaloverzicht */}
         <div>
-          <p className="text-xs font-semibold text-white/30 uppercase tracking-widest mb-3">Revenue Leak Score™ — Totaaloverzicht</p>
+          <SectionLabel>Revenue Leak Score™ — Totaaloverzicht</SectionLabel>
           <TotalsTable data={data} />
         </div>
 
@@ -508,47 +524,33 @@ export default function RevenueLeakAuditPage() {
         {/* Data source badge */}
         {serankingTraffic ? (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-900/40 border border-emerald-700/50 px-3 py-1 text-xs font-medium text-emerald-400">
+            <StatusPill tone="ok" size="md">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
               Gemeten via SE Ranking — {(serankingTraffic.monthly_organic_sessions + serankingTraffic.monthly_paid_sessions).toLocaleString("nl-NL")} bezoekers/mnd
-            </span>
+            </StatusPill>
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-900/30 border border-amber-700/40 px-3 py-1 text-xs font-medium text-amber-400">
+            <StatusPill tone="warning" size="md">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
               Schatting — traffic niet beschikbaar via SE Ranking
-            </span>
+            </StatusPill>
           </div>
         )}
 
         {/* Next steps */}
-        <NextStepsSection data={data} />
+        <NextStepsSection relevant={relevantStepsFromRevenueLeak(data)} />
 
         {/* Methodology */}
         {data.methodology_note && (
-          <p className="text-[11px] text-white/20 italic leading-relaxed">{data.methodology_note}</p>
+          <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.methodology_note}</p>
         )}
         {data.funnel?.methodology_note && (
-          <p className="text-[11px] text-white/20 italic leading-relaxed">{data.funnel.methodology_note}</p>
+          <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.funnel.methodology_note}</p>
         )}
 
-        {/* CTA */}
-        <div className="border border-[#c5a96f]/20 rounded-2xl p-6 text-center bg-[#c5a96f]/5">
-          <p className="text-sm font-semibold text-white mb-1" style={{ fontFamily: "var(--font-serif)" }}>
-            Klaar voor de volgende stap?
-          </p>
-          <p className="text-xs text-white/40 mb-4">
-            Stap 1 heb je net gehad. Laten we bespreken wat voor jouw situatie het meest oplevert.
-          </p>
-          <a
-            href="https://tradual.com/contact"
-            className="inline-block px-6 py-2.5 bg-[#c5a96f] text-[#1a1f2e] text-sm font-semibold rounded-lg hover:bg-[#d4b87e] transition-colors"
-          >
-            Plan een strategiegesprek
-          </a>
-        </div>
+        <Cta />
       </div>
-    </div>
+    </ReportShell>
   );
 }

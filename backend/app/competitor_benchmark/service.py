@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from app.competitor_benchmark import snapshot_cache
 from app.competitor_benchmark.comparison import build_comparisons, score_layers, store_snapshot_from_audit
 from app.competitor_benchmark.discovery import discover_candidates
 from app.competitor_benchmark.gap_pricing import price_gap_to_market
+from app.competitor_benchmark.market import resolve_market
 from app.competitor_benchmark.measure import measure_all
 from app.competitor_benchmark.models import CompetitorBenchmarkRun
 from app.competitor_benchmark.schemas import (
@@ -28,7 +30,10 @@ from app.competitor_benchmark.schemas import (
     CompetitorSnapshot,
     DiscoveryResult,
     MarketInfo,
+    RejectedCandidate,
+    SeedOutcome,
 )
+from app.competitor_benchmark.seeds import resolve_seeds
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.domains import extract_domain
@@ -62,17 +67,37 @@ async def _fail(run_id: uuid.UUID, message: str) -> None:
 
 
 async def _resolve_snapshots(
-    db: AsyncSession, domains: list[str], *, probe_checkout: bool, force: bool = False,
+    db: AsyncSession,
+    domains: list[str],
+    *,
+    probe_checkout: bool,
+    force: bool = False,
+    force_domains: set[str] | None = None,
 ) -> list[CompetitorSnapshot]:
     """Cache-aware measurement: reuse a fresh snapshot when one exists, measure the
     rest. This is what makes an operator override cheap (only newly-added domains
     lack a cache hit) and what lets two prospects in the same niche share
-    measurements of the same competitor."""
+    measurements of the same competitor.
+
+    `force_domains` bypasses the cache for specific domains. Newly added competitors go
+    in there, because failures are negative-cached for 2 days: without this, an operator
+    who fixes a typo and re-adds the domain gets the cached failure back and no
+    measurement at all, unless they happen to know the separate /remeasure endpoint
+    exists.
+    """
+    forced = force_domains or set()
     cached: dict[str, CompetitorSnapshot] = {}
     to_measure: list[str] = []
     for domain in domains:
-        snapshot = None if force else await snapshot_cache.get_fresh(db, domain)
+        snapshot = None if (force or domain in forced) else await snapshot_cache.get_fresh(db, domain)
         if snapshot is not None:
+            # The cache is keyed on the registrable domain, so a lookup for `www.x.nl`
+            # can return a snapshot whose own `.domain` is `x.nl`. Re-key it onto the
+            # domain we asked for, or `_build_roster` looks it up under the requested
+            # name, misses, and tells the prospect a measured competitor was
+            # unreachable.
+            if snapshot.domain != domain:
+                snapshot = snapshot.model_copy(update={"domain": domain})
             cached[domain] = snapshot
         else:
             to_measure.append(domain)
@@ -85,6 +110,44 @@ async def _resolve_snapshots(
 
     by_domain = {**cached, **{s.domain: s for s in measured}}
     return [by_domain[d] for d in domains if d in by_domain]
+
+
+def _dedup_normalized(domains: list[str]) -> list[str]:
+    """Normalize and de-duplicate while preserving order. Guards the whole scoring path
+    against legacy rows written before ingress normalization existed, where `www.x.nl`
+    and `x.nl` could both sit in `selected_domains` and count twice in the median."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for domain in domains:
+        normalized = extract_domain(domain)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            out.append(normalized)
+    return out
+
+
+def _curation_note(seeded: list[str], added: list[str], removed: list[str]) -> str | None:
+    """The disclosure sentence for a hand-touched competitor set.
+
+    Added and removed genuinely warrant different wording: injecting a competitor and
+    dropping one both move the median, but a prospect reading "wij hebben er twee
+    weggehaald" is owed a different explanation than "wij hebben er twee toegevoegd".
+    """
+    manual = sorted(set(seeded) | set(added))
+    n_manual, n_removed = len(manual), len(set(removed))
+
+    if n_manual and n_removed:
+        return (
+            "Deze set is handmatig samengesteld door Tradual — dit is geen automatisch "
+            "bepaald marktgemiddelde."
+        )
+    if n_removed:
+        subject = "1 concurrent is" if n_removed == 1 else f"{n_removed} concurrenten zijn"
+        return f"Uit de automatisch gevonden set {subject} handmatig verwijderd door Tradual."
+    if n_manual:
+        subject = "1 concurrent is" if n_manual == 1 else f"{n_manual} concurrenten zijn"
+        return f"{subject} handmatig toegevoegd aan de automatisch gevonden set."
+    return None
 
 
 def _build_roster(
@@ -119,9 +182,13 @@ async def _score_and_persist(
     candidate_meta: dict[str, CandidateDomain],
     market: MarketInfo,
     include_checkout_probe: bool,
+    force_domains: set[str] | None = None,
 ) -> None:
+    selected_domains = _dedup_normalized(selected_domains)
     await _set_status(db, run.id, "measuring")
-    snapshots = await _resolve_snapshots(db, selected_domains, probe_checkout=include_checkout_probe)
+    snapshots = await _resolve_snapshots(
+        db, selected_domains, probe_checkout=include_checkout_probe, force_domains=force_domains,
+    )
     snapshots_by_domain = {s.domain: s for s in snapshots}
 
     await _set_status(db, run.id, "scoring")
@@ -156,7 +223,10 @@ async def _score_and_persist(
         gap_to_best_monthly_eur_low=gap_best_lo,
         gap_to_best_monthly_eur_high=gap_best_hi,
         market_is_also_below_benchmark=market_is_also_below_benchmark,
-        manually_curated=bool(run.operator_removed),
+        manually_curated=bool(run.operator_removed or run.operator_added or run.seed_domains),
+        curation_note_nl=_curation_note(
+            run.seed_domains or [], run.operator_added or [], run.operator_removed or [],
+        ),
         checkout_probe_included=include_checkout_probe,
         methodology_note_nl=(
             "Marktvergelijking o.b.v. live meting van automatisch (of handmatig aangepast) "
@@ -174,7 +244,8 @@ async def _score_and_persist(
 
 
 def _candidate_meta_from_discovery(discovery: DiscoveryResult) -> dict[str, CandidateDomain]:
-    return {c.domain: c for c in discovery.kept}
+    # Keyed on the normalized domain so roster lookups can't miss on a `www.` mismatch.
+    return {extract_domain(c.domain): c for c in discovery.kept}
 
 
 async def run_competitor_benchmark(run_id: uuid.UUID) -> None:
@@ -191,6 +262,11 @@ async def run_competitor_benchmark(run_id: uuid.UUID) -> None:
             audit_data = FullAuditData.model_validate(audit_row.audit_data)
             store_url = audit_row.store_url
             store_domain = extract_domain(store_url)
+
+            # Persist before discovery: a discovery failure used to leave store_domain
+            # empty, which then showed up as a blank store name on the report.
+            run.store_domain = store_domain
+            await db.commit()
 
             await _set_status(db, run.id, "discovering")
 
@@ -213,18 +289,60 @@ async def run_competitor_benchmark(run_id: uuid.UUID) -> None:
                 use_ai_ranking=True,
                 max_ranked=10,
             )
-            if discovery is None:
-                raise RuntimeError("DataForSEO is niet geconfigureerd — concurrent-discovery niet mogelijk")
+            # Everything the operator told us about, in priority order: seeds first,
+            # then anything they added by hand on a previous pass. Re-applying
+            # `operator_added` here is what makes a re-discovery (e.g. after a market
+            # change) idempotent w.r.t. operator intent instead of silently wiping it.
+            manual_domains = _dedup_normalized((run.seed_domains or []) + (run.operator_added or []))
+            excluded = {extract_domain(d) for d in (run.operator_removed or [])}
+            manual_domains = [d for d in manual_domains if d not in excluded]
 
-            run.store_domain = store_domain
+            if discovery is None:
+                if not manual_domains:
+                    raise RuntimeError(
+                        "DataForSEO is niet geconfigureerd en er zijn geen handmatige "
+                        "concurrenten opgegeven — concurrent-discovery niet mogelijk"
+                    )
+                # Manual-only run. `resolve_market` is pure and needs no API key, and a
+                # synthetic DiscoveryResult keeps `discovery_json` non-null so the
+                # operator's /candidates panel stays reachable.
+                resolution = resolve_market(store_domain, pages, override=market_override)
+                discovery = DiscoveryResult(
+                    market=MarketInfo(
+                        location_code=resolution.location_code,
+                        language_code=resolution.language_code,
+                        source=resolution.source,
+                        confidence=resolution.confidence,
+                    ),
+                    market_note_nl=(
+                        "Automatische discovery niet beschikbaar — alleen handmatig "
+                        "opgegeven concurrenten zijn gemeten."
+                    ),
+                )
+
             run.location_code = discovery.market.location_code
             run.language_code = discovery.market.language_code
             run.market_source = discovery.market.source
+
+            candidate_meta = _candidate_meta_from_discovery(discovery)
+            for domain in manual_domains:
+                if domain not in candidate_meta:
+                    entry = CandidateDomain(
+                        domain=domain, discovery_source="operator", classification="operator",
+                        reason_nl="Handmatig opgegeven door Tradual", enrichment_status="skipped",
+                    )
+                    candidate_meta[domain] = entry
+                    discovery.kept.insert(0, entry)
+
             run.discovery_json = discovery.model_dump(mode="json")
             await db.commit()
 
-            selected_domains = [c.domain for c in discovery.kept][: settings.COMPETITOR_MEASURE_LIMIT]
-            candidate_meta = _candidate_meta_from_discovery(discovery)
+            limit = run.measure_limit or settings.COMPETITOR_MEASURE_LIMIT
+            auto = [
+                c.domain for c in discovery.kept
+                if extract_domain(c.domain) not in set(manual_domains) | excluded
+            ]
+            selected_domains = (manual_domains + auto)[:limit]
 
             await _score_and_persist(
                 db, run, audit_data, store_domain, selected_domains, candidate_meta,
@@ -269,63 +387,123 @@ async def remeasure(run_id: uuid.UUID, force: bool = False) -> None:
             await _fail(run_id, str(exc))
 
 
-async def update_competitor_set(
-    run_id: uuid.UUID,
+@dataclass
+class CompetitorSetPlan:
+    """Outcome of deciding what an operator's add/remove request actually does.
+
+    Deciding is separated from measuring on purpose: it is pure bookkeeping (one SELECT,
+    one UPDATE, no network) and therefore runs inside the request, so the response can
+    say which domains were accepted, what they were normalized to, and which were
+    dropped. When this ran in the background task the endpoint could only ever return an
+    opaque 200, and a typo'd domain failed three minutes later where nobody saw it.
+    """
+    outcomes: list[SeedOutcome]
+    selected_domains: list[str]
+    accepted: list[str]
+    removed: list[str] = field(default_factory=list)
+    needs_rediscovery: bool = False
+
+    @property
+    def changed(self) -> bool:
+        """False when nothing was accepted and nothing was removed — e.g. the operator
+        made a typo. The caller must not re-measure in that case: it would cost a full
+        pass over every selected domain for no change at all."""
+        return bool(self.accepted or self.removed) or self.needs_rediscovery
+
+
+async def plan_competitor_set_update(
+    db: AsyncSession,
+    run: CompetitorBenchmarkRun,
     add: list[str],
     remove: list[str],
-    market_override: tuple[int, str] | None,
-) -> None:
+    market_override: tuple[int, str] | None = None,
+) -> CompetitorSetPlan:
+    # A market change re-derives the whole competitor universe — a different market is a
+    # different set of plausible peers, not a tweak to this one. Operator curation is
+    # re-applied by run_competitor_benchmark rather than discarded.
+    if market_override is not None and market_override != (run.location_code, run.language_code):
+        run.location_code, run.language_code = market_override
+        run.market_source = "operator"
+        run.status = "queued"
+        await db.commit()
+        return CompetitorSetPlan(outcomes=[], selected_domains=list(run.selected_domains or []),
+                                 accepted=[], needs_rediscovery=True)
+
+    current = _dedup_normalized(run.selected_domains or [])
+    removed = [extract_domain(d) for d in remove if extract_domain(d)]
+    remove_set = set(removed)
+    kept_selection = [d for d in current if d not in remove_set]
+
+    limit = run.measure_limit or settings.COMPETITOR_MEASURE_LIMIT
+    accepted, outcomes = resolve_seeds(add, run.store_domain, kept_selection, limit)
+    new_selected = kept_selection + accepted
+
+    run.selected_domains = new_selected
+    run.operator_added = sorted(set(run.operator_added or []) | set(accepted))
+    run.operator_removed = sorted(set(run.operator_removed or []) | remove_set)
+
+    discovery = DiscoveryResult.model_validate(run.discovery_json) if run.discovery_json else None
+    if discovery is not None:
+        # Prune `kept` on removal instead of leaving it untouched: the operator UI
+        # renders the selection, and a removed competitor whose candidate entry survived
+        # here used to reappear as a chip on the next refetch. The entry moves to
+        # `rejected` so the audit trail still shows it was considered.
+        surviving = []
+        for candidate in discovery.kept:
+            if extract_domain(candidate.domain) in remove_set:
+                discovery.rejected.append(RejectedCandidate(
+                    domain=candidate.domain, reason_code="operator_removed",
+                    reason_nl="Handmatig verwijderd door Tradual",
+                ))
+            else:
+                surviving.append(candidate)
+        discovery.kept = surviving
+
+        # Only domains that actually made the selection get a candidate entry — adding
+        # one for every requested domain is how a chip could appear for a competitor the
+        # cap had silently dropped.
+        known = {extract_domain(c.domain) for c in discovery.kept}
+        for domain in accepted:
+            if domain not in known:
+                discovery.kept.append(CandidateDomain(
+                    domain=domain, discovery_source="operator", classification="operator",
+                    reason_nl="Handmatig toegevoegd door Tradual", enrichment_status="skipped",
+                ))
+        run.discovery_json = discovery.model_dump(mode="json")
+
+    if accepted or remove_set:
+        run.status = "measuring"
+    await db.commit()
+
+    return CompetitorSetPlan(
+        outcomes=outcomes, selected_domains=new_selected,
+        accepted=accepted, removed=sorted(remove_set),
+    )
+
+
+async def measure_competitor_set(run_id: uuid.UUID, force_domains: list[str] | None = None) -> None:
+    """Background half of an operator edit: measure and re-score the already-persisted
+    selection. `force_domains` bypasses the snapshot cache for newly added domains."""
     async with AsyncSessionLocal() as db:
         try:
             result = await db.execute(select(CompetitorBenchmarkRun).where(CompetitorBenchmarkRun.id == run_id))
             run = result.scalar_one()
 
-            # A market change re-derives the whole competitor universe — a different
-            # market is a different set of plausible peers, not a tweak to this one.
-            if market_override is not None and (market_override[0], market_override[1]) != (run.location_code, run.language_code):
-                run.location_code, run.language_code = market_override
-                run.market_source = "operator"
-                run.status = "queued"
-                await db.commit()
-                await run_competitor_benchmark(run_id)
-                return
-
-            current = list(run.selected_domains or [])
-            remove_set = {d.lower() for d in remove}
-            new_selected = [d for d in current if d.lower() not in remove_set]
-            for d in add:
-                if d.lower() not in {x.lower() for x in new_selected}:
-                    new_selected.append(d)
-            new_selected = new_selected[: settings.COMPETITOR_MEASURE_LIMIT]
-
-            run.operator_added = sorted(set((run.operator_added or [])) | set(add))
-            run.operator_removed = sorted(set((run.operator_removed or [])) | set(remove))
-
-            discovery = DiscoveryResult.model_validate(run.discovery_json) if run.discovery_json else None
-            candidate_meta = _candidate_meta_from_discovery(discovery) if discovery else {}
-            for d in add:
-                if d not in candidate_meta:
-                    operator_candidate = CandidateDomain(
-                        domain=d, discovery_source="operator", classification="operator",
-                        reason_nl="Handmatig toegevoegd door operator", enrichment_status="skipped",
-                    )
-                    candidate_meta[d] = operator_candidate
-                    if discovery is not None:
-                        discovery.kept.append(operator_candidate)
-            if discovery is not None:
-                run.discovery_json = discovery.model_dump(mode="json")
-
             audit_result = await db.execute(select(FullAudit).where(FullAudit.id == run.full_audit_id))
             audit_row = audit_result.scalar_one()
             audit_data = FullAuditData.model_validate(audit_row.audit_data)
+
+            discovery = DiscoveryResult.model_validate(run.discovery_json) if run.discovery_json else None
+            candidate_meta = _candidate_meta_from_discovery(discovery) if discovery else {}
             market = discovery.market if discovery else MarketInfo(
                 location_code=run.location_code, language_code=run.language_code,
                 source=run.market_source, confidence="high",
             )
 
             await _score_and_persist(
-                db, run, audit_data, run.store_domain, new_selected, candidate_meta,
+                db, run, audit_data, run.store_domain, run.selected_domains or [], candidate_meta,
                 market, run.include_checkout_probe,
+                force_domains=set(force_domains or []),
             )
         except Exception as exc:
             logger.exception("Competitor set update failed for run %s: %s", run_id, exc)

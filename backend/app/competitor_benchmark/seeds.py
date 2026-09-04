@@ -17,30 +17,10 @@ option either.
 
 from __future__ import annotations
 
-from typing import Literal
-
-from pydantic import BaseModel
-
 from app.competitor_benchmark.filters import blocklist_match
 from app.competitor_benchmark.market import is_same_brand
+from app.competitor_benchmark.schemas import SeedOutcome
 from app.domains import normalize_competitor_input, same_registrable
-
-SeedStatus = Literal["accepted", "rejected", "warning"]
-SeedCode = Literal[
-    "accepted", "normalized", "duplicate", "invalid", "self",
-    "same_brand", "blocklist", "over_limit",
-]
-
-
-class SeedOutcome(BaseModel):
-    """What happened to one supplied domain. Reports a *decision*, never a measurement —
-    the measurement runs afterwards in the background, so the copy must not imply the
-    competitor was successfully measured."""
-    input: str
-    domain: str | None = None
-    status: SeedStatus
-    code: SeedCode
-    message_nl: str
 
 
 def resolve_seeds(

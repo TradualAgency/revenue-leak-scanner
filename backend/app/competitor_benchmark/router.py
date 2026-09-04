@@ -13,13 +13,23 @@ from app.competitor_benchmark.schemas import (
     CompetitorBenchmarkStatusResponse,
     CompetitorCandidatesResponse,
     CompetitorRemeasureRequest,
+    CompetitorRosterEntry,
     CompetitorRunStatus,
     CompetitorSetUpdateRequest,
+    CompetitorSetUpdateResponse,
     DiscoveryResult,
     MarketInfo,
 )
-from app.competitor_benchmark.service import remeasure, run_competitor_benchmark, update_competitor_set
+from app.competitor_benchmark.seeds import resolve_seeds
+from app.competitor_benchmark.service import (
+    measure_competitor_set,
+    plan_competitor_set_update,
+    remeasure,
+    run_competitor_benchmark,
+)
+from app.config import settings
 from app.dependencies import get_db, require_operator_key
+from app.domains import extract_domain
 from app.full_audit.models import FullAudit
 
 router = APIRouter(prefix="/api/v1/competitor-benchmark", tags=["competitor-benchmark"])
@@ -48,15 +58,25 @@ async def create_competitor_benchmark(
     if audit.status != "ready_for_review":
         raise HTTPException(status_code=409, detail="Full audit is not yet ready")
 
+    store_domain = extract_domain(audit.store_url)
+    # Never above the ceiling: COMPETITOR_CONCURRENCY=2 x COMPETITOR_DOMAIN_TIMEOUT_S=180
+    # means 8 domains is already up to ~12 minutes of work inside the API process.
+    limit = max(1, min(body.max_competitors or settings.COMPETITOR_MEASURE_LIMIT,
+                       settings.COMPETITOR_MEASURE_LIMIT))
+    seed_domains, outcomes = resolve_seeds(body.seed_domains, store_domain, [], limit)
+
     run = CompetitorBenchmarkRun(
         id=uuid.uuid4(),
         full_audit_id=audit.id,
-        store_domain="",
+        store_domain=store_domain,
         location_code=body.location_code or 2840,
         language_code=body.language_code or "en",
         market_source="operator" if body.location_code and body.language_code else "tld",
         status="queued",
         include_checkout_probe=body.include_checkout_probe,
+        seed_domains=seed_domains,
+        seed_outcomes=[o.model_dump(mode="json") for o in outcomes],
+        measure_limit=limit,
     )
     db.add(run)
     await db.commit()
@@ -64,7 +84,10 @@ async def create_competitor_benchmark(
 
     background_tasks.add_task(run_competitor_benchmark, run_id=run.id)
 
-    return CompetitorBenchmarkCreateResponse(id=run.id, status=run.status, created_at=run.created_at)  # type: ignore[arg-type]
+    return CompetitorBenchmarkCreateResponse(
+        id=run.id, status=run.status, created_at=run.created_at,  # type: ignore[arg-type]
+        seed_domains=seed_domains, outcomes=outcomes,
+    )
 
 
 async def _get_run_or_404(run_id: uuid.UUID, db: AsyncSession) -> CompetitorBenchmarkRun:
@@ -124,33 +147,59 @@ async def get_competitor_candidates(
     run_id: uuid.UUID, db: AsyncSession = Depends(get_db),
 ) -> CompetitorCandidatesResponse:
     run = await _get_run_or_404(run_id, db)
-    if not run.discovery_json:
-        raise HTTPException(status_code=404, detail="Discovery not yet available")
-    discovery = DiscoveryResult.model_validate(run.discovery_json)
+    # Deliberately does NOT 404 when discovery produced nothing. The operator panel is
+    # gated on this payload, so 404-ing here hid the manual-add UI in exactly the case
+    # where it is the only way to get a benchmark at all.
+    discovery = DiscoveryResult.model_validate(run.discovery_json) if run.discovery_json else None
+    roster = [
+        CompetitorRosterEntry.model_validate(entry)
+        for entry in ((run.benchmark_data or {}).get("roster") or [])
+    ]
     return CompetitorCandidatesResponse(
-        kept=discovery.kept, rejected=discovery.rejected,
-        market=discovery.market, market_note_nl=discovery.market_note_nl,
+        kept=discovery.kept if discovery else [],
+        rejected=discovery.rejected if discovery else [],
+        market=discovery.market if discovery else None,
+        market_note_nl=discovery.market_note_nl if discovery else None,
+        selected_domains=run.selected_domains or [],
+        seed_domains=run.seed_domains or [],
+        seed_outcomes=run.seed_outcomes or [],
+        operator_added=run.operator_added or [],
+        operator_removed=run.operator_removed or [],
+        measure_limit=run.measure_limit or settings.COMPETITOR_MEASURE_LIMIT,
+        discovery_available=discovery is not None,
+        roster=roster,
     )
 
 
-@router.patch("/{run_id}/competitors", response_model=CompetitorBenchmarkCreateResponse, dependencies=[Depends(require_operator_key)])
+@router.patch("/{run_id}/competitors", response_model=CompetitorSetUpdateResponse, dependencies=[Depends(require_operator_key)])
 async def update_competitors(
     run_id: uuid.UUID,
     body: CompetitorSetUpdateRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-) -> CompetitorBenchmarkCreateResponse:
+) -> CompetitorSetUpdateResponse:
     run = await _get_run_or_404(run_id, db)
     if run.status not in ("ready", "insufficient_data", "failed"):
-        raise HTTPException(status_code=409, detail="Run is still processing")
+        raise HTTPException(status_code=409, detail="Run is nog bezig — wacht tot de meting klaar is")
 
     market_override = (body.location_code, body.language_code) if body.location_code and body.language_code else None
-    run.status = "measuring"
-    await db.commit()
 
-    background_tasks.add_task(update_competitor_set, run_id=run.id, add=body.add, remove=body.remove, market_override=market_override)
+    # Decide synchronously so the response can report per-domain outcomes; only the
+    # measuring runs in the background.
+    plan = await plan_competitor_set_update(db, run, body.add, body.remove, market_override)
 
-    return CompetitorBenchmarkCreateResponse(id=run.id, status="measuring", created_at=run.created_at)
+    if plan.needs_rediscovery:
+        background_tasks.add_task(run_competitor_benchmark, run_id=run.id)
+    elif plan.changed:
+        background_tasks.add_task(measure_competitor_set, run_id=run.id, force_domains=plan.accepted)
+    # Otherwise nothing was accepted and nothing was removed: a typo shouldn't cost a
+    # full re-measure of the whole set, so the run is left exactly as it was.
+
+    return CompetitorSetUpdateResponse(
+        id=run.id, status=run.status, created_at=run.created_at,  # type: ignore[arg-type]
+        selected_domains=plan.selected_domains, outcomes=plan.outcomes,
+        measure_limit=run.measure_limit or settings.COMPETITOR_MEASURE_LIMIT,
+    )
 
 
 @router.post("/{run_id}/remeasure", response_model=CompetitorBenchmarkCreateResponse, dependencies=[Depends(require_operator_key)])

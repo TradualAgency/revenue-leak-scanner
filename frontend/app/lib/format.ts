@@ -1,3 +1,5 @@
+import type { MetricComparison } from "~/lib/types";
+
 // Shared euro/range formatting for the revenue-leak report. Before this module,
 // `full-audit.$auditId.tsx` inlined `€${x.toLocaleString("nl-NL")}` at every call
 // site and `revenue-leak.$auditId.tsx` had its own local `fmt()` — the two routes
@@ -42,6 +44,28 @@ export function eurRangeParts(low: number | null | undefined, high: number | nul
     return { lead: eur((low + high) / 2), tail: null };
   }
   return { lead: eur(low), tail: `– ${eur(high)}` };
+}
+
+/** Renders a competitor-benchmark metric in its own unit. Lives here rather than in
+ * `marktvergelijking.$runId.tsx` because the "eur" branch delegates to `eur()` and
+ * euro formatting stays in one module. */
+export function formatMetricValue(value: number | null, unit: MetricComparison["unit"]): string {
+  if (value == null) return "—";
+  switch (unit) {
+    case "ms":
+      return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
+    case "s":
+      return `${value.toFixed(1)}s`;
+    case "pct":
+      return `${Math.round(value)}%`;
+    case "score":
+      return `${Math.round(value)}/100`;
+    case "eur":
+      return eur(value);
+    case "count":
+    default:
+      return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+  }
 }
 
 export function pct(n: number | null | undefined, digits = 0): string {

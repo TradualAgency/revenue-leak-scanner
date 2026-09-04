@@ -41,9 +41,13 @@ export default function Header({ overlay = false }: { overlay?: boolean }) {
             Pricing
           </a>
         </nav>
+        {/* Sharp corners, dark green on gold — the real tradual.com button pattern, and
+            the same one the overlay variant above already uses. This header now sits on
+            top of the report pages, whose CTAs are sharp; a rounded button here under a
+            sharp one there reads as a bug. Settled, please don't flip it back. */}
         <a
           href="#scan"
-          className="bg-[#c5a96f] hover:bg-[#b8975e] text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors tracking-wide"
+          className="bg-tradual-accent text-tradual-primary text-sm font-medium px-8 py-3 hover:opacity-90 transition tracking-wide"
         >
           Get Free Audit
         </a>

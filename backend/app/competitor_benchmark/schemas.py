@@ -28,7 +28,7 @@ DiscoverySource = Literal["competitors_domain", "serp_competitors", "both", "ope
 Classification = Literal["direct", "category", "marketplace", "retailer", "irrelevant", "operator"]
 RejectReasonCode = Literal[
     "self", "same_brand", "blocklist", "size_band", "min_intersections",
-    "market_coherence", "ai_excluded", "enrichment_unreachable",
+    "market_coherence", "ai_excluded", "enrichment_unreachable", "operator_removed",
 ]
 
 
@@ -51,6 +51,24 @@ class CandidateDomain(BaseModel):
     relevance_score: float | None = None
     reason_nl: str | None = None
     rank: int | None = None
+
+
+SeedStatus = Literal["accepted", "rejected", "warning"]
+SeedCode = Literal[
+    "accepted", "normalized", "duplicate", "invalid", "self",
+    "same_brand", "blocklist", "over_limit",
+]
+
+
+class SeedOutcome(BaseModel):
+    """What happened to one manually-supplied domain. Reports a *decision*, never a
+    measurement — measuring runs afterwards in the background, so the copy must not
+    imply the competitor was reached. See seeds.resolve_seeds."""
+    input: str
+    domain: str | None = None
+    status: SeedStatus
+    code: SeedCode
+    message_nl: str
 
 
 class RejectedCandidate(BaseModel):
@@ -220,10 +238,14 @@ class CompetitorBenchmarkData(BaseModel):
     gap_to_best_monthly_eur_low: float | None = None
     gap_to_best_monthly_eur_high: float | None = None
     market_is_also_below_benchmark: bool = False
-    # True once the operator has removed at least one auto-discovered competitor — the
-    # page must stop calling this "je markt" and say it was hand-assembled instead,
-    # since a curated median is no longer an honest market median.
+    # True once the operator has touched the set at all — seeded, added or removed. A
+    # curated median is no longer an honest market median, so the page must stop calling
+    # it "je markt". Adding matters as much as removing here: injecting a competitor
+    # moves the median just as surely as dropping one does.
     manually_curated: bool = False
+    # The specific disclosure sentence, composed server-side so the wording lives in one
+    # place and the page stays a dumb renderer. None when nothing was curated.
+    curation_note_nl: str | None = None
     checkout_probe_included: bool = False
     methodology_note_nl: str | None = None
     narrative_nl: str | None = None
@@ -241,7 +263,14 @@ class CompetitorBenchmarkCreateRequest(BaseModel):
     full_audit_id: uuid.UUID
     location_code: int | None = None
     language_code: str | None = None
+    # Clamped to settings.COMPETITOR_MEASURE_LIMIT in the router — an operator-settable
+    # value above the ceiling would let one run monopolise the shared event loop
+    # (COMPETITOR_CONCURRENCY=2 x COMPETITOR_DOMAIN_TIMEOUT_S=180).
     max_competitors: int | None = None
+    # Competitors the operator already knows about. Measured with priority over anything
+    # discovery finds, and the only way to run a benchmark at all when DataForSEO is
+    # unavailable.
+    seed_domains: list[str] = []
     include_checkout_probe: bool = False
 
 
@@ -249,6 +278,8 @@ class CompetitorBenchmarkCreateResponse(BaseModel):
     id: uuid.UUID
     status: CompetitorRunStatus
     created_at: datetime
+    seed_domains: list[str] = []
+    outcomes: list[SeedOutcome] = []
 
 
 class CompetitorBenchmarkStatusResponse(BaseModel):
@@ -277,6 +308,23 @@ class CompetitorCandidatesResponse(BaseModel):
     rejected: list[RejectedCandidate] = []
     market: MarketInfo | None = None
     market_note_nl: str | None = None
+    # `kept` is the discovery audit trail; `selected_domains` is what is actually being
+    # measured. The operator UI must render the latter — showing `kept` is how a
+    # removed competitor's chip used to reappear, and how a domain dropped by the cap
+    # looked like it had been added.
+    selected_domains: list[str] = []
+    seed_domains: list[str] = []
+    seed_outcomes: list[SeedOutcome] = []
+    operator_added: list[str] = []
+    operator_removed: list[str] = []
+    measure_limit: int = 8
+    # False when discovery never produced a result (no DataForSEO credentials, or it
+    # returned nothing). The UI needs this to offer the manual-only path instead of
+    # hiding the whole panel, which is what the old 404 on this endpoint caused.
+    discovery_available: bool = True
+    # Carries measure_status per domain — the field that actually answers "did my
+    # manual add work?", which a decision-time response cannot.
+    roster: list[CompetitorRosterEntry] = []
 
 
 class CompetitorSetUpdateRequest(BaseModel):
@@ -284,6 +332,15 @@ class CompetitorSetUpdateRequest(BaseModel):
     remove: list[str] = []
     location_code: int | None = None
     language_code: str | None = None
+
+
+class CompetitorSetUpdateResponse(BaseModel):
+    id: uuid.UUID
+    status: CompetitorRunStatus
+    created_at: datetime
+    selected_domains: list[str] = []
+    outcomes: list[SeedOutcome] = []
+    measure_limit: int = 8
 
 
 class CompetitorRemeasureRequest(BaseModel):

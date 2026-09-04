@@ -17,6 +17,7 @@ import type {
   AiBloatInsight,
   CompetitorBenchmarkStatusResponse,
   CompetitorCandidatesResponse,
+  SeedOutcome,
   DataConflict,
   MetricStatus,
   ModelWarning,
@@ -70,7 +71,7 @@ const statusMessages = [
 function SectionCard({ title, children, dark = false }: { title: string; children: React.ReactNode; dark?: boolean }) {
   return (
     <section
-      className={`rounded-2xl p-6 ${dark ? "bg-[#1a1f2e] text-white" : "bg-white border border-gray-100 shadow-sm"}`}
+      className={`rounded-2xl p-6 ${dark ? "bg-tradual-primary text-white" : "bg-white border border-gray-100 shadow-sm"}`}
     >
       <h2
         className={`text-lg font-semibold mb-4 ${dark ? "text-[#c5a96f]" : "text-gray-700"}`}
@@ -99,7 +100,7 @@ function Pill({ label, tone = "neutral" }: { label: string; tone?: "good" | "war
     warn: "bg-yellow-50 text-yellow-700",
     bad: "bg-red-50 text-red-700",
     neutral: "bg-gray-100 text-gray-600",
-    gold: "bg-[#c5a96f]/15 text-[#9a7a4a]",
+    gold: "bg-[#c5a96f]/15 text-[#8a7440]",
   };
   return (
     <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${colors[tone]}`}>{label}</span>
@@ -181,21 +182,21 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
       {m && (
         <div className="grid grid-cols-3 gap-3 mb-5">
           {m.lcp_ms != null && (
-            <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-xl p-3 text-center border border-gray-100">
               <div className="text-xl font-semibold text-gray-900">{(m.lcp_ms / 1000).toFixed(1)}s</div>
               <div className="text-xs text-gray-400 mt-0.5">LCP</div>
               {m.lcp_rating && <Pill label={m.lcp_rating} tone={ratingTone(m.lcp_rating)} />}
             </div>
           )}
           {m.inp_ms != null && (
-            <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-xl p-3 text-center border border-gray-100">
               <div className="text-xl font-semibold text-gray-900">{m.inp_ms}ms</div>
               <div className="text-xs text-gray-400 mt-0.5">INP</div>
               {m.inp_rating && <Pill label={m.inp_rating} tone={ratingTone(m.inp_rating)} />}
             </div>
           )}
           {m.cls != null && (
-            <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-xl p-3 text-center border border-gray-100">
               <div className="text-xl font-semibold text-gray-900">{m.cls.toFixed(3)}</div>
               <div className="text-xs text-gray-400 mt-0.5">CLS</div>
               {m.cls_rating && <Pill label={m.cls_rating} tone={ratingTone(m.cls_rating)} />}
@@ -210,7 +211,7 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
             {(["performance", "accessibility", "best_practices", "seo"] as const).map((key) => {
               const val = data.lighthouse![key];
               return (
-                <div key={key} className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div key={key} className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                   <div className={`text-lg font-semibold ${val != null && val < 50 ? "text-red-500" : val != null && val < 90 ? "text-yellow-600" : "text-emerald-600"}`}>
                     {val ?? "—"}
                   </div>
@@ -228,7 +229,7 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
             {(["performance", "accessibility", "best_practices", "seo"] as const).map((key) => {
               const val = data.desktop_lighthouse![key];
               return (
-                <div key={key} className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+                <div key={key} className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                   <div className={`text-lg font-semibold ${val != null && val < 50 ? "text-red-500" : val != null && val < 90 ? "text-yellow-600" : "text-emerald-600"}`}>
                     {val ?? "—"}
                   </div>
@@ -252,25 +253,25 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
       {(data.tbt_ms != null || data.speed_index_ms != null || data.tti_ms != null || data.desktop_lcp_ms != null) && (
         <div className="grid grid-cols-4 gap-2 mb-4">
           {data.tbt_ms != null && (
-            <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
               <div className={`text-lg font-semibold ${data.tbt_ms > 600 ? "text-red-500" : data.tbt_ms > 200 ? "text-yellow-600" : "text-emerald-600"}`}>{Math.round(data.tbt_ms)}ms</div>
               <div className="text-xs text-gray-400 mt-0.5">TBT</div>
             </div>
           )}
           {data.speed_index_ms != null && (
-            <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
               <div className={`text-lg font-semibold ${data.speed_index_ms > 4300 ? "text-red-500" : data.speed_index_ms > 1800 ? "text-yellow-600" : "text-emerald-600"}`}>{(data.speed_index_ms / 1000).toFixed(1)}s</div>
               <div className="text-xs text-gray-400 mt-0.5">Speed Index</div>
             </div>
           )}
           {data.tti_ms != null && (
-            <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
               <div className={`text-lg font-semibold ${data.tti_ms > 7300 ? "text-red-500" : data.tti_ms > 3800 ? "text-yellow-600" : "text-emerald-600"}`}>{(data.tti_ms / 1000).toFixed(1)}s</div>
               <div className="text-xs text-gray-400 mt-0.5">TTI</div>
             </div>
           )}
           {data.desktop_lcp_ms != null && (
-            <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+            <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
               <div className={`text-lg font-semibold ${data.desktop_lcp_ms > 4000 ? "text-red-500" : data.desktop_lcp_ms > 2500 ? "text-yellow-600" : "text-emerald-600"}`}>{(data.desktop_lcp_ms / 1000).toFixed(1)}s</div>
               <div className="text-xs text-gray-400 mt-0.5">LCP Desktop</div>
             </div>
@@ -289,7 +290,7 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
           </p>
           <div className="grid grid-cols-2 gap-3 mb-2">
             {data.money_page_lcp_ms != null && (
-              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+              <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                 <div className={`text-lg font-semibold ${data.money_page_lcp_ms > 4000 ? "text-red-500" : data.money_page_lcp_ms > 2500 ? "text-yellow-600" : "text-emerald-600"}`}>{(data.money_page_lcp_ms / 1000).toFixed(1)}s</div>
                 <div className="text-xs text-gray-400 mt-0.5">
                   LCP {data.money_page_lcp_source === "field" ? "(real users)" : data.money_page_lcp_source === "lab" ? "(lab)" : ""}
@@ -297,7 +298,7 @@ function PerformanceSection({ data }: { data: NonNullable<FullAuditData["perform
               </div>
             )}
             {data.money_page_lighthouse?.performance != null && (
-              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+              <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                 <div className={`text-lg font-semibold ${data.money_page_lighthouse.performance < 50 ? "text-red-500" : data.money_page_lighthouse.performance < 90 ? "text-yellow-600" : "text-emerald-600"}`}>{data.money_page_lighthouse.performance}</div>
                 <div className="text-xs text-gray-400 mt-0.5">Performance</div>
               </div>
@@ -371,7 +372,7 @@ function TrackingSection({ data }: { data: NonNullable<FullAuditData["tracking_d
   return (
     <SectionCard title="Tracking & Data Kwaliteit">
       {data.est_attribution_loss_percent != null && (
-        <div className="mb-4 text-center bg-[#FAFAF8] rounded-xl p-4 border border-gray-100">
+        <div className="mb-4 text-center bg-tradual-bg rounded-xl p-4 border border-gray-100">
           <div className="text-4xl font-semibold text-[#c5a96f]">{data.est_attribution_loss_percent}%</div>
           <div className="text-xs text-gray-400 mt-1">Geschatte attribution loss</div>
         </div>
@@ -415,19 +416,19 @@ function CheckoutSection({ data }: { data: NonNullable<FullAuditData["checkout_f
       )}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {data.fields_in_address_form != null && (
-          <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
+          <div className="bg-tradual-bg rounded-xl p-3 text-center border border-gray-100">
             <div className={`text-xl font-semibold ${data.fields_in_address_form > 12 ? "text-red-500" : "text-gray-900"}`}>{data.fields_in_address_form}</div>
             <div className="text-xs text-gray-400 mt-0.5">Adresvelden</div>
           </div>
         )}
         {data.redirects_before_payment != null && (
-          <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
+          <div className="bg-tradual-bg rounded-xl p-3 text-center border border-gray-100">
             <div className="text-xl font-semibold text-gray-900">{data.redirects_before_payment}</div>
             <div className="text-xs text-gray-400 mt-0.5">Redirects</div>
           </div>
         )}
         {data.total_checkout_time_seconds != null && (
-          <div className="bg-[#FAFAF8] rounded-xl p-3 text-center border border-gray-100">
+          <div className="bg-tradual-bg rounded-xl p-3 text-center border border-gray-100">
             <div className="text-xl font-semibold text-gray-900">{data.total_checkout_time_seconds}s</div>
             <div className="text-xs text-gray-400 mt-0.5">Probe tijd</div>
           </div>
@@ -1304,7 +1305,7 @@ function RichResultsSection({ data }: { data: NonNullable<FullAuditData["rich_re
       {data.schemas_detected.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {data.schemas_detected.map((s) => (
-            <span key={s} className="text-xs bg-[#c5a96f]/10 text-[#9a7a4a] px-2 py-0.5 rounded-full">{s}</span>
+            <span key={s} className="text-xs bg-[#c5a96f]/10 text-[#8a7440] px-2 py-0.5 rounded-full">{s}</span>
           ))}
         </div>
       )}
@@ -1332,7 +1333,7 @@ function ServerSideTrackingSection({ data }: { data: NonNullable<FullAuditData["
   return (
     <SectionCard title="Server-side Conversions">
       {data.attribution_loss_risk && (
-        <div className="mb-4 text-center bg-[#FAFAF8] rounded-xl p-4 border border-gray-100">
+        <div className="mb-4 text-center bg-tradual-bg rounded-xl p-4 border border-gray-100">
           <Pill label={`Attribution loss risk: ${data.attribution_loss_risk}`} tone={riskTone(data.attribution_loss_risk)} />
         </div>
       )}
@@ -1365,7 +1366,7 @@ function AccessibilitySection({ data }: { data: NonNullable<FullAuditData["acces
   return (
     <SectionCard title="Accessibility (EU EAA)">
       {score != null && (
-        <div className="text-center bg-[#FAFAF8] rounded-xl p-4 border border-gray-100 mb-4">
+        <div className="text-center bg-tradual-bg rounded-xl p-4 border border-gray-100 mb-4">
           <div className={`text-4xl font-semibold ${scoreColor}`}>{score}</div>
           <div className="text-xs text-gray-400 mt-1">Lighthouse accessibility score</div>
         </div>
@@ -1478,12 +1479,39 @@ function CompetitorBenchmarkSection({ data }: { data: NonNullable<FullAuditData[
 
 const COMPETITOR_RUN_TERMINAL_STATUSES = new Set(["ready", "insufficient_data", "failed"]);
 
+// Splits "a.nl, b.nl" and pasted multi-line lists into individual domains. Normalization
+// itself is the server's job — it owns the rules and reports back what it did.
+function splitDomainInput(raw: string): string[] {
+  return raw.split(/[\s,;]+/).filter(Boolean);
+}
+
+function SeedOutcomeList({ outcomes }: { outcomes: SeedOutcome[] }) {
+  if (outcomes.length === 0) return null;
+  const tone: Record<SeedOutcome["status"], string> = {
+    accepted: "text-emerald-700",
+    warning: "text-amber-700",
+    rejected: "text-red-600",
+  };
+  return (
+    <ul className="mt-2 space-y-1">
+      {outcomes.map((o, i) => (
+        <li key={`${o.input}-${i}`} className={`text-xs ${tone[o.status]}`}>
+          {o.message_nl}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<CompetitorBenchmarkStatusResponse | null>(null);
   const [candidates, setCandidates] = useState<CompetitorCandidatesResponse | null>(null);
   const [starting, setStarting] = useState(false);
+  const [seedInput, setSeedInput] = useState("");
   const [addDomain, setAddDomain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [outcomes, setOutcomes] = useState<SeedOutcome[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const isDone = status != null && COMPETITOR_RUN_TERMINAL_STATUSES.has(status.status);
@@ -1508,9 +1536,14 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
   async function handleStart() {
     setStarting(true);
     setError(null);
+    setOutcomes([]);
     try {
-      const res = await createCompetitorBenchmark({ full_audit_id: fullAuditId });
+      const res = await createCompetitorBenchmark({
+        full_audit_id: fullAuditId,
+        seed_domains: splitDomainInput(seedInput),
+      });
       setRunId(res.id);
+      setOutcomes(res.outcomes);
       setStatus({
         id: res.id, status: res.status, store_domain: "", phase_label_nl: null,
         measured_count: 0, total_count: 0, created_at: res.created_at, completed_at: null,
@@ -1523,25 +1556,38 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
   }
 
   async function handleAdd() {
-    if (!runId || !addDomain.trim()) return;
+    const domains = splitDomainInput(addDomain);
+    if (!runId || busy || domains.length === 0) return;
+    setBusy(true);
     setError(null);
     try {
-      await updateCompetitorSet(runId, { add: [addDomain.trim()], remove: [] });
+      const res = await updateCompetitorSet(runId, { add: domains, remove: [] });
       setAddDomain("");
-      setStatus((s) => (s ? { ...s, status: "measuring" } : s));
+      setOutcomes(res.outcomes);
+      // Only poll again if the server actually accepted something — a rejected typo
+      // leaves the run untouched and shouldn't flip the panel into "measuring".
+      if (res.status !== status?.status) {
+        setStatus((s) => (s ? { ...s, status: res.status } : s));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kon concurrent niet toevoegen");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleRemove(domain: string) {
-    if (!runId) return;
+    if (!runId || busy) return;
+    setBusy(true);
     setError(null);
+    setOutcomes([]);
     try {
-      await updateCompetitorSet(runId, { add: [], remove: [domain] });
-      setStatus((s) => (s ? { ...s, status: "measuring" } : s));
+      const res = await updateCompetitorSet(runId, { add: [], remove: [domain] });
+      setStatus((s) => (s ? { ...s, status: res.status } : s));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kon concurrent niet verwijderen");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1550,18 +1596,32 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
       {!runId && (
         <>
           <p className="text-sm text-gray-500 mb-4">
-            Meet automatisch geselecteerde concurrenten op snelheid, stack, checkout-frictie, tracking en toekomstgereedheid — met een euro-gat t.o.v. de marktmediaan als kop.
+            Meet automatisch gevonden concurrenten op snelheid, stack, checkout-frictie, tracking en toekomstgereedheid — met een euro-gat t.o.v. de marktmediaan als kop.
+          </p>
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            Bekende concurrenten (optioneel)
+          </label>
+          <textarea
+            value={seedInput}
+            onChange={(e) => setSeedInput(e.target.value)}
+            rows={3}
+            placeholder={"concurrent.nl\nandere-concurrent.be"}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs mb-1.5 focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
+          />
+          <p className="text-xs text-gray-400 mb-4">
+            Eén per regel. Deze worden met voorrang gemeten; discovery vult de rest aan.
           </p>
           <button
             onClick={handleStart}
             disabled={starting}
-            className="bg-[#1a1f2e] text-white text-sm font-medium px-5 py-2.5 rounded-xl disabled:opacity-50"
+            className="bg-tradual-accent text-tradual-primary text-sm font-medium px-8 py-3 hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {starting ? "Starten…" : "Start marktvergelijking"}
           </button>
         </>
       )}
       {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
+      <SeedOutcomeList outcomes={outcomes} />
       {status && !isDone && (
         <p className="text-sm text-gray-500 mt-3">
           {status.phase_label_nl ?? status.status}
@@ -1586,31 +1646,71 @@ function CompetitorBenchmarkPanel({ fullAuditId }: { fullAuditId: string }) {
           </a>
           {candidates && (
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Geselecteerde concurrenten</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                Gemeten concurrenten ({candidates.selected_domains.length}/{candidates.measure_limit})
+              </p>
               <div className="flex flex-wrap gap-2 mb-3">
-                {candidates.kept.map((c) => (
-                  <span
-                    key={c.domain}
-                    className="inline-flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs text-gray-700"
-                  >
-                    {c.domain}
-                    {c.reason_nl && <span className="text-gray-400" title={c.reason_nl}>ⓘ</span>}
-                    <button onClick={() => handleRemove(c.domain)} className="text-gray-400 hover:text-red-500 font-bold">×</button>
-                  </span>
-                ))}
-                {candidates.kept.length === 0 && <span className="text-xs text-gray-400">Geen concurrenten geselecteerd.</span>}
+                {/* Rendered from selected_domains, not discovery's `kept` list — `kept`
+                    is the audit trail, and showing it meant a removed competitor's chip
+                    reappeared and a capped-out domain looked like it had been added. */}
+                {candidates.selected_domains.map((domain) => {
+                  const meta = candidates.kept.find((c) => c.domain === domain);
+                  const measured = candidates.roster.find((r) => r.domain === domain);
+                  return (
+                    <span
+                      key={domain}
+                      className="inline-flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-xs text-gray-700"
+                    >
+                      {domain}
+                      {measured && measured.measure_status !== "ok" && (
+                        <span
+                          className="text-amber-600"
+                          title={`Meting: ${measured.measure_status}`}
+                        >
+                          ⚠
+                        </span>
+                      )}
+                      {meta?.reason_nl && <span className="text-gray-400" title={meta.reason_nl}>ⓘ</span>}
+                      <button
+                        onClick={() => handleRemove(domain)}
+                        disabled={busy}
+                        className="text-gray-400 hover:text-red-500 font-bold disabled:opacity-40"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+                {candidates.selected_domains.length === 0 && (
+                  <span className="text-xs text-gray-400">Geen concurrenten geselecteerd.</span>
+                )}
               </div>
-              <div className="flex gap-2 mb-4">
+              {!candidates.discovery_available && (
+                <p className="text-xs text-amber-700 mb-3">
+                  Automatische discovery is niet beschikbaar voor deze run — voeg concurrenten handmatig toe.
+                </p>
+              )}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAdd();
+                }}
+                className="flex gap-2 mb-4"
+              >
                 <input
                   value={addDomain}
                   onChange={(e) => setAddDomain(e.target.value)}
                   placeholder="domein.nl toevoegen"
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs"
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#c5a96f] focus:border-transparent"
                 />
-                <button onClick={handleAdd} className="bg-gray-100 text-gray-700 text-xs px-3 py-1.5 rounded-lg font-medium">
-                  Toevoegen
+                <button
+                  type="submit"
+                  disabled={busy || addDomain.trim() === ""}
+                  className="bg-gray-100 text-gray-700 text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-40"
+                >
+                  {busy ? "Bezig…" : "Toevoegen"}
                 </button>
-              </div>
+              </form>
               {candidates.rejected.length > 0 && (
                 <details className="text-xs">
                   <summary className="text-[#c5a96f] cursor-pointer">Afgewezen kandidaten ({candidates.rejected.length})</summary>
@@ -1643,25 +1743,25 @@ function ShopifyPlatformSection({
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Catalogus</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
             {catalog.product_count_sampled != null && (
-              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+              <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                 <div className="text-lg font-semibold text-gray-900">{catalog.product_count_sampled}</div>
                 <div className="text-xs text-gray-400">Producten (sample)</div>
               </div>
             )}
             {catalog.out_of_stock_ratio_pct != null && (
-              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+              <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                 <div className={`text-lg font-semibold ${catalog.out_of_stock_ratio_pct > 15 ? "text-red-500" : "text-gray-900"}`}>{catalog.out_of_stock_ratio_pct}%</div>
                 <div className="text-xs text-gray-400">Uitverkocht</div>
               </div>
             )}
             {!!catalog.products_missing_images && (
-              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+              <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                 <div className="text-lg font-semibold text-amber-600">{catalog.products_missing_images}</div>
                 <div className="text-xs text-gray-400">Zonder foto</div>
               </div>
             )}
             {!!catalog.products_missing_description && (
-              <div className="bg-[#FAFAF8] rounded-lg p-2 text-center border border-gray-100">
+              <div className="bg-tradual-bg rounded-lg p-2 text-center border border-gray-100">
                 <div className="text-lg font-semibold text-amber-600">{catalog.products_missing_description}</div>
                 <div className="text-xs text-gray-400">Zonder omschrijving</div>
               </div>
@@ -1861,7 +1961,7 @@ function SanityExportSection({ data }: { data: Record<string, unknown> }) {
       <div className="flex justify-end mb-3">
         <button
           onClick={handleCopy}
-          className="text-xs px-4 py-2 rounded-lg bg-[#c5a96f] text-[#1a1f2e] font-semibold hover:opacity-90 transition-opacity"
+          className="text-xs px-4 py-2 rounded-lg bg-[#c5a96f] text-tradual-primary font-semibold hover:opacity-90 transition-opacity"
         >
           {copied ? "Gekopieerd!" : "Kopieer JSON"}
         </button>
@@ -1921,13 +2021,13 @@ export default function FullAuditResults() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
+      <div className="min-h-screen bg-tradual-bg flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center px-4">
           <div className="max-w-md w-full bg-white rounded-2xl p-10 text-center flex flex-col gap-4 shadow-sm border border-gray-100">
             <h2 className="text-xl font-semibold text-gray-900" style={{ fontFamily: "var(--font-serif)" }}>Error</h2>
             <p className="text-gray-500 text-sm">{error}</p>
-            <Link to="/full-audit" className="bg-[#1a1f2e] text-white font-medium px-6 py-3 rounded-xl">Terug</Link>
+            <Link to="/full-audit" className="bg-tradual-accent text-tradual-primary font-medium px-8 py-3 hover:opacity-90 transition-opacity">Terug</Link>
           </div>
         </div>
         <Footer />
@@ -1936,7 +2036,7 @@ export default function FullAuditResults() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
+    <div className="min-h-screen bg-tradual-bg flex flex-col">
       <Header />
       <main className="flex-1 py-12 px-4">
         <div className="max-w-4xl mx-auto flex flex-col gap-6">
@@ -1944,7 +2044,7 @@ export default function FullAuditResults() {
           {/* Header */}
           <div>
             <Link to="/full-audit" className="text-xs text-[#c5a96f] hover:underline">← Nieuwe audit</Link>
-            <h1 className="text-2xl font-semibold text-[#1a1f2e] mt-2" style={{ fontFamily: "var(--font-serif)" }}>
+            <h1 className="text-2xl font-semibold text-tradual-primary mt-2" style={{ fontFamily: "var(--font-serif)" }}>
               {auditData?.company_name || statusData?.store_url || "Full Audit"}
             </h1>
             {statusData && (
@@ -1984,7 +2084,7 @@ export default function FullAuditResults() {
             <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-8 text-center">
               <h2 className="text-lg font-semibold text-red-600 mb-2">Audit mislukt</h2>
               <p className="text-sm text-gray-500">De store kon niet gescraped worden of er trad een fout op.</p>
-              <Link to="/full-audit" className="mt-4 inline-block bg-[#1a1f2e] text-white px-5 py-2.5 rounded-xl text-sm font-medium">
+              <Link to="/full-audit" className="mt-4 inline-block bg-tradual-accent text-tradual-primary px-8 py-3 text-sm font-medium hover:opacity-90 transition-opacity">
                 Opnieuw proberen
               </Link>
             </div>
@@ -2040,7 +2140,7 @@ export default function FullAuditResults() {
                   )}
                   {auditData.third_party_scripts?.total_third_party_domains != null && (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 text-center">
-                      <div className="text-3xl font-semibold text-[#1a1f2e]">{auditData.third_party_scripts.total_third_party_domains}</div>
+                      <div className="text-3xl font-semibold text-tradual-primary">{auditData.third_party_scripts.total_third_party_domains}</div>
                       <div className="text-xs text-gray-400 mt-1">Externe domeinen</div>
                     </div>
                   )}

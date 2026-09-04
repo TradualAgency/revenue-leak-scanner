@@ -76,7 +76,7 @@ export default function FullAuditIntake() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
+    <div className="min-h-screen bg-tradual-bg flex flex-col">
       <Header />
 
       <main className="flex-1 py-16 px-4">
@@ -86,7 +86,7 @@ export default function FullAuditIntake() {
               Intern gebruik
             </span>
             <h1
-              className="text-3xl font-semibold text-[#1a1f2e]"
+              className="text-3xl font-semibold text-tradual-primary"
               style={{ fontFamily: "var(--font-serif)" }}
             >
               Prospect Full Audit
@@ -259,7 +259,7 @@ export default function FullAuditIntake() {
             <button
               type="submit"
               disabled={loading || !storeUrl.trim()}
-              className="bg-[#1a1f2e] hover:bg-[#2d3550] disabled:opacity-50 text-white font-medium px-6 py-3 rounded-xl transition-colors text-sm mt-2"
+              className="bg-tradual-accent text-tradual-primary disabled:opacity-50 font-medium px-8 py-3 hover:opacity-90 transition-opacity text-sm mt-2"
             >
               {loading ? "Audit starten..." : "Start Full Audit →"}
             </button>

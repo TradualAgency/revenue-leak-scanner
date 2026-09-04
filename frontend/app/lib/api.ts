@@ -5,6 +5,7 @@ import type {
   CompetitorBenchmarkStatusResponse,
   CompetitorCandidatesResponse,
   CompetitorSetUpdatePayload,
+  CompetitorSetUpdateResponse,
   FullAuditCreateResponse,
   FullAuditRequest,
   FullAuditResponse,
@@ -28,8 +29,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(options?.headers as Record<string, string> | undefined) },
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(text || `HTTP ${res.status}`);
+    // FastAPI returns {"detail": ...} for every HTTPException, so unwrap it — throwing
+    // the raw body meant the operator saw `{"detail":"Run is nog bezig"}` on screen.
+    const raw = await res.text().catch(() => res.statusText);
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.detail === "string") message = parsed.detail;
+    } catch {
+      // not JSON — fall through to the raw body
+    }
+    throw new Error(message.slice(0, 300) || `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
@@ -111,8 +121,8 @@ export function getCompetitorCandidates(runId: string): Promise<CompetitorCandid
 // is a write (it mutates which competitors are measured), and a silent failure on a
 // write is a UX trap: the operator would believe an override took effect when it
 // didn't.
-export function updateCompetitorSet(runId: string, payload: CompetitorSetUpdatePayload): Promise<CompetitorBenchmarkCreateResponse> {
-  return request<CompetitorBenchmarkCreateResponse>(`/competitor-benchmark/${runId}/competitors`, {
+export function updateCompetitorSet(runId: string, payload: CompetitorSetUpdatePayload): Promise<CompetitorSetUpdateResponse> {
+  return request<CompetitorSetUpdateResponse>(`/competitor-benchmark/${runId}/competitors`, {
     method: "PATCH",
     headers: { "X-Operator-Key": OPERATOR_API_KEY },
     body: JSON.stringify(payload),

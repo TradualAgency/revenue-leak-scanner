@@ -9,6 +9,9 @@
   --color-tradual-accent: #c5a96f;
   --color-tradual-danger: #EF4444;
   --color-tradual-bg: #FAFAF8;
+  --color-tradual-body: #475569;
+  --color-tradual-border: #e2e8f0;
+  --color-tradual-surface-muted: #f9f9f9;
 
   --animate-marquee: marquee 40s linear infinite;
 
@@ -29,6 +32,14 @@ body {
 
 .marquee-mask {
   mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+/* The report pages are sales documents that get printed or saved as PDF. The one
+   inverted dark block on each (the CTA) loses its fill by default because print
+   engines drop backgrounds — this keeps it. */
+.print-exact {
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
 }
 
 @media (prefers-reduced-motion: reduce) {
