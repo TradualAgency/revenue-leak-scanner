@@ -1,0 +1,50 @@
+[
+  {
+    "naam": "Reserveonderdelen & fitment-catalogi",
+    "reden": "Catalogi van 68.000 tot 15 miljoen SKU's waarin de koper op modelnummer of kenteken zoekt. De zoekfunctie en productdata zijn letterlijk de conversie. Vrijwel alles draait op Magento en niemand meet feed-compleetheid of out-of-stock ratio."
+  },
+  {
+    "naam": "Sanitair, badkamer & installatietechniek",
+    "reden": "Hoge AOV van 200 tot 2.000 euro met enorme variantenstructuur (maat, kleur, uitvoering). Zwaar afhankelijk van Google Shopping met dunne marges, waardoor advertentieverspilling direct pijn doet. Bevat de zwaarste pagina's van de hele markt."
+  },
+  {
+    "naam": "Verlichting & LED",
+    "reden": "Beeldzware collectiepagina's met honderden producten per view, specs-gedreven koper en nul merkloyaliteit. Sterke Q4-piek maakt laadtijd seizoenskritisch. Ongecomprimeerde afbeeldingen en CLS zijn hier structureel."
+  },
+  {
+    "naam": "Dierbenodigdheden, diervoeding & ruitersport",
+    "reden": "Duizenden SKU's met varianten op gewicht, smaak en leeftijd, lage marge en agressieve ad spend. Hoge herhaalaankoop betekent dat elke 0,1% conversieverbetering zich jaar op jaar opstapelt."
+  },
+  {
+    "naam": "Hengelsport, modelbouw & hobby",
+    "reden": "Catalogi van 20.000 tot 100.000+ SKU's met eindeloze varianten, gerund door eigenaar-gedreven bedrijven van 2 tot 15 miljoen omzet zonder tech-partner. Laagste technische volwassenheid van alle onderzochte niches."
+  },
+  {
+    "naam": "Camping, caravan, boot & zwembad",
+    "reden": "Onderdelen, accessoires en chemie in een sterk seizoensgebonden markt met piek van maart tot augustus. Een traag piekmoment is niet te repareren, wat een natuurlijke deadline in de sales-pitch legt."
+  },
+  {
+    "naam": "Tuin, groen & agrarisch",
+    "reden": "Duizenden SKU's met structureel hoge out-of-stock omdat het om levend product gaat. Feeds lopen daardoor constant scheef, wat out-of-stock ratio en feed-kwaliteit tot killer-metrics maakt."
+  },
+  {
+    "naam": "Gereedschap, ijzerwaren & bouw",
+    "reden": "Honderdduizenden SKU's, bevestigingsmateriaal in eindeloze maatvarianten en veel B2B-herhaalaankoop met staffel- en inlogprijzen. Bevat de allerzwaarste homepage die in de scan is gemeten."
+  },
+  {
+    "naam": "Elektrotechnisch materiaal & kabel",
+    "reden": "Doodsaaie technische groothandel met tienduizenden artikelnummers waarin de installateur op artikelcode zoekt. Hoge herhaalfrequentie in B2B maakt de ROI-berekening van een audit uitzonderlijk hoog."
+  },
+  {
+    "naam": "Medisch, thuiszorg & drogisterij",
+    "reden": "Grote catalogus met een oudere doelgroep, waardoor toegankelijkheid en snelheid dubbel tellen. De Europese toegankelijkheidswet (EAA) geeft hier een juridische urgentie die geen enkele andere niche heeft."
+  },
+  {
+    "naam": "B2B kantoor, verpakking & printsupplies",
+    "reden": "Het saaiste segment dat er bestaat: extreem hoge herhaalfrequentie, staffelprijzen en klantspecifieke assortimenten. Elk lek stapelt zich per klant per jaar op, wat de hoogste ROI-berekening van alle niches oplevert."
+  },
+  {
+    "naam": "Horeca & grootkeuken",
+    "reden": "Duizenden SKU's met technische specificaties waarin een B2B-koper op modelnummer zoekt, met hoge AOV op apparatuur. Kleinere niche met relatief veel bot-blocking."
+  }
+]

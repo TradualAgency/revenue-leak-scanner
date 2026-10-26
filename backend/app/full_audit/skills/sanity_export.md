@@ -43,11 +43,9 @@ Reageer uitsluitend met geldige JSON (geen markdown, geen uitleg erbuiten) die e
   "prioritizedRoadmap": [
     {
       "phase": "Fase 1 — <naam>",
-      "tradualProduct": "speed-audit",
       "duration": "<tijdsindicatie, bv. '2 weken'>",
       "outcome": "<concreet meetbaar resultaat>",
-      "items": ["<deliverable 1>", "<deliverable 2>", "<deliverable 3>"],
-      "estInvestmentEur": 2500
+      "items": ["<deliverable 1>", "<deliverable 2>", "<deliverable 3>"]
     }
   ]
 }
@@ -55,11 +53,7 @@ Reageer uitsluitend met geldige JSON (geen markdown, geen uitleg erbuiten) die e
 ## Roadmap-conventies
 
 - Gebruik 2-4 fases, gesorteerd op urgentie en impact
-- `tradualProduct` is één van: `speed-audit` | `stack-rebuild` | `performance-retainer`
-  - `speed-audit` → performance-focus, script cleanup, Core Web Vitals verbetering
-  - `stack-rebuild` → headless migratie, replatform, fundamentele architectuurwijziging
-  - `performance-retainer` → doorlopende optimalisatie, ongoing monitoring en A/B testing
-- `estInvestmentEur` is een indicatief bedrag in euros (gangbare range: 1500–15000)
+- Noem geen prijzen, investeringsbedragen of omzetbedragen in de roadmap: bedragen in dit rapport komen uitsluitend uit het rekenmodel, niet uit deze tekst
 - Baseer de roadmap op `bloat_what_must_go`, `ai_analysis.tech_architecture.top_actions` en `cost_analysis.est_monthly_savings_eur`
 - Deliverables zijn concrete dingen die Tradual oplevert: rapporten, migraties, configuraties, workshops
 

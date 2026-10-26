@@ -1,10 +1,10 @@
-import json
 import logging
 from urllib.parse import urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
 
+from app.full_audit.analyzers.jsonld import PRODUCT_TYPES, jsonld_nodes, node_types, product_keys
 from app.full_audit.schemas import ProductFeedHealth
 
 logger = logging.getLogger(__name__)
@@ -63,18 +63,15 @@ async def analyze_product_feeds(store_url: str, pages: list[dict]) -> ProductFee
             ]
             og_present = len(og_tags) > 0
 
-            for tag in soup.find_all("script", type="application/ld+json"):
-                try:
-                    data = json.loads(tag.string or tag.get_text())
-                    items = data.get("@graph", [data]) if isinstance(data, dict) else (data if isinstance(data, list) else [data])
-                    for item in items:
-                        if isinstance(item, dict) and item.get("@type") == "Product":
-                            present_keys = {k.lower() for k in item}
-                            missing_fields = [f for f in _GOOD_JSONLD_FIELDS if f not in present_keys]
-                            jsonld_complete = len(missing_fields) == 0
-                            break
-                except Exception:
-                    pass
+            product = next((n for n in jsonld_nodes(html) if node_types(n) & PRODUCT_TYPES), None)
+            if product is not None:
+                present = product_keys(product)
+                missing_fields = [
+                    f for f in sorted(_GOOD_JSONLD_FIELDS)
+                    # gtin8/12/13/14 all satisfy "has a GTIN"
+                    if not (f in present or (f == "gtin" and any(k.startswith("gtin") for k in present)))
+                ]
+                jsonld_complete = len(missing_fields) == 0
 
         score = sum([
             (feed_reachable or 0) * 2,

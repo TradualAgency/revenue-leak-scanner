@@ -1,5 +1,4 @@
 import uuid
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -8,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.leads.models import Lead
 from app.reports.models import DetectedPlugin, Report
+from app.reports.service import build_free_scan_summary
 from app.reports.schemas import (
     DetectedPluginOut,
     ReportFullResponse,
@@ -55,16 +55,7 @@ async def get_report_summary(
     )
     plugin_count = plugin_count_result.scalar_one()
 
-    loss = report.estimated_monthly_loss
-    loss_min = Decimal(str(round(float(loss) * 0.8, 2))) if loss is not None else None
-    loss_max = Decimal(str(round(float(loss) * 1.2, 2))) if loss is not None else None
-
     rd = report.report_data or {}
-    blended_loss_rate: float | None = rd.get("blended_loss_rate")
-    excess_load_time: float | None = rd.get("excess_load_time")
-    speed_source: str | None = rd.get("speed_source")
-    pages_scanned: list[str] | None = rd.get("pages_scraped")
-
     plugins_list: list[DetectedPluginOut] | None = None
     if report.status == "completed":
         plugins_result = await db.execute(
@@ -82,43 +73,28 @@ async def get_report_summary(
             for p in plugins_result.scalars().all()
         ]
 
-    quick_wins: list[str] = []
-    if report.status == "completed":
-        if excess_load_time is not None and excess_load_time > 1.5:
-            pct = round(excess_load_time * 7)
-            quick_wins.append(
-                f"Laadtijd optimaliseren kan ~{pct}% extra conversie opleveren"
-            )
-        if plugins_list:
-            paid_plugins = [p for p in plugins_list if p.estimated_monthly_cost and p.estimated_monthly_cost > 0]
-            if paid_plugins:
-                total_cost = sum(float(p.estimated_monthly_cost) for p in paid_plugins)  # type: ignore[arg-type]
-                quick_wins.append(
-                    f"Evalueer of alle {len(paid_plugins)} betaalde plugins nodig zijn — bespaar tot ${round(total_cost)}/mo"
-                )
-        if plugin_count > 5:
-            quick_wins.append(
-                f"Te veel plugins ({plugin_count}) vertragen je store — overweeg consolidatie"
-            )
-        perf = report.performance_score
-        if perf is not None and perf < 50:
-            quick_wins.append("Je performance score is kritiek laag — dit kost je direct omzet")
+    priced = (
+        build_free_scan_summary(rd)
+        if report.status == "completed" and rd.get("revenue_leak")
+        else {}
+    )
+    legacy = (
+        float(report.estimated_monthly_loss)
+        if not priced and report.estimated_monthly_loss is not None
+        else None
+    )
 
     return ReportSummaryResponse(
         report_id=report.id,
         status=report.status,
         performance_score=report.performance_score,
         plugin_count=plugin_count if report.status == "completed" else None,
-        estimated_monthly_loss_min=loss_min,
-        estimated_monthly_loss_max=loss_max,
         total_plugin_cost_monthly=report.total_plugin_cost_monthly,
-        avg_load_time_ms=report.avg_load_time_ms,
-        excess_load_time=excess_load_time,
-        blended_loss_rate=blended_loss_rate,
-        speed_source=speed_source,
-        pages_scanned=pages_scanned,
+        lcp_ms=priced.get("lcp_ms"),
+        pages_scanned=rd.get("pages_scraped"),
         plugins=plugins_list,
-        quick_wins=quick_wins if quick_wins else None,
+        legacy_monthly_loss_estimate=legacy,
+        **{k: v for k, v in priced.items() if k != "lcp_ms"},
     )
 
 

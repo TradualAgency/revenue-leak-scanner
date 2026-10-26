@@ -9,6 +9,7 @@ from pathlib import Path
 import anthropic
 
 from app.config import settings
+from app.full_audit.client_report import build_client_content, client_revenue_leak
 from app.full_audit.schemas import FullAuditData
 
 logger = logging.getLogger(__name__)
@@ -58,9 +59,31 @@ def _slugify(s: str) -> str:
     return s
 
 
+def _prose_payload(audit: FullAuditData) -> dict:
+    """What the prose model gets to read. Everything it writes lands in the client's
+    Sanity page, so internal sales material (pitch copy per CEO trigger, Stack Rebuild
+    pricing and payback warnings) and contact details are kept out of its input, not
+    just out of the output: the revenue leak goes in as the client projection."""
+    payload = audit.model_dump(
+        mode="json",
+        exclude={
+            "contact_email": True,
+            "contact_person": True,
+            "sanity_export": True,
+            "revenue_leak": True,
+            "seranking_traffic": {"raw_response": True},
+            "pipeline_warnings": True,
+        },
+    )
+    payload["revenue_leak"] = (
+        client_revenue_leak(audit.revenue_leak).model_dump(mode="json") if audit.revenue_leak else None
+    )
+    return payload
+
+
 async def _call_prose(client: anthropic.AsyncAnthropic, audit: FullAuditData) -> dict:
     system = (_SKILLS_DIR / "sanity_export.md").read_text(encoding="utf-8")
-    payload = json.dumps(audit.model_dump(mode="json"), ensure_ascii=False)
+    payload = json.dumps(_prose_payload(audit), ensure_ascii=False)
     msg = await client.messages.create(
         model=MODEL,
         max_tokens=4096,
@@ -90,6 +113,9 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
         and (obs["page"], obs["observation"]) not in _existing_cro_keys
     ]
 
+    # Revenue leak, actions, roadmap, assumptions and citations come from the same
+    # client projection the /revenue-leak page reads — see client_report.py.
+    client = build_client_content(audit)
     now_iso = datetime.now(UTC).isoformat()
     company = audit.company_name or audit.store_url
     pa = audit.platform_architecture
@@ -124,7 +150,6 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
         "auditSummary": audit.audit_summary,
         "biggestTechRisk": audit.biggest_tech_risk,
         "biggestTechOpportunity": audit.biggest_tech_opportunity,
-        "estPerformanceLiftPercent": audit.est_performance_lift_percent,
         "methodologyNote": audit.methodology_note,
 
         "platformArchitecture": {
@@ -307,11 +332,9 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
             {
                 "_key": _key(),
                 "phase": r.get("phase"),
-                "tradualProduct": r.get("tradualProduct"),
                 "duration": r.get("duration"),
                 "outcome": r.get("outcome"),
                 "items": r.get("items", []),
-                "estInvestmentEur": r.get("estInvestmentEur"),
             }
             for r in (prose.get("prioritizedRoadmap") or [])
         ],
@@ -322,7 +345,7 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
             "heading": prose.get("ctaHeading"),
             "body": prose.get("ctaBody"),
             "primaryButtonLabel": "Plan een gesprek",
-            "primaryButtonUrl": "https://tradual.nl/contact",
+            "primaryButtonUrl": settings.CONTACT_URL,
         },
 
         "aiAnalysis": {
@@ -358,12 +381,12 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                 "signalsUsed": audit.ai_analysis.ad_bounce_revenue.signals_used,
             } if audit.ai_analysis and audit.ai_analysis.ad_bounce_revenue else None,
             "roadmap": {
-                "executiveSummary": audit.ai_analysis.roadmap.executive_summary,
-                "northStarMetric": audit.ai_analysis.roadmap.north_star_metric,
-                "topPriorities": audit.ai_analysis.roadmap.top_priorities,
-                "quickWins": audit.ai_analysis.roadmap.quick_wins,
-                "totalTimeline": audit.ai_analysis.roadmap.total_timeline,
-                "signalsUsed": audit.ai_analysis.roadmap.signals_used,
+                "executiveSummary": client.roadmap.executive_summary,
+                "northStarMetric": client.roadmap.north_star_metric,
+                "topPriorities": client.roadmap.top_priorities,
+                "quickWins": client.roadmap.quick_wins,
+                "totalTimeline": client.roadmap.total_timeline,
+                "signalsUsed": client.roadmap.signals_used,
                 "phases": [
                     {
                         "_key": _key(),
@@ -373,43 +396,47 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                         "objective": p.objective,
                         "actions": p.actions,
                         "expectedOutcome": p.expected_outcome,
-                        "estMonthlyRevenueImpactEur": p.est_monthly_revenue_impact_eur,
+                        # Summed from the registry findings the phase resolves
+                        # (attach_roadmap_impact), never an LLM estimate.
+                        "estMonthlyRevenueImpactEurLow": p.est_monthly_impact_eur_low,
+                        "estMonthlyRevenueImpactEurHigh": p.est_monthly_impact_eur_high,
+                        "findingIds": p.finding_ids,
                         "dependencies": p.dependencies,
                     }
-                    for p in audit.ai_analysis.roadmap.phases
+                    for p in client.roadmap.phases
                 ],
-            } if audit.ai_analysis and audit.ai_analysis.roadmap else None,
+            } if client.roadmap else None,
             "crossSectionThesis": audit.ai_analysis.cross_section_thesis if audit.ai_analysis else None,
         },
 
         "revenueLeak": {
-            "totalMonthlyLossEur": audit.revenue_leak.total_monthly_loss_eur,
-            "totalAnnualLossEur": audit.revenue_leak.total_annual_loss_eur,
-            "directMonthlyLossEur": audit.revenue_leak.direct_monthly_loss_eur,
-            "directAnnualLossEur": audit.revenue_leak.direct_annual_loss_eur,
-            "efficiencyMonthlyUpliftEur": audit.revenue_leak.efficiency_monthly_uplift_eur,
-            "efficiencyAnnualUpliftEur": audit.revenue_leak.efficiency_annual_uplift_eur,
-            "methodologyNote": audit.revenue_leak.methodology_note,
+            "totalMonthlyLossEur": client.revenue_leak.total_monthly_loss_eur,
+            "totalAnnualLossEur": client.revenue_leak.total_annual_loss_eur,
+            "directMonthlyLossEur": client.revenue_leak.direct_monthly_loss_eur,
+            "directAnnualLossEur": client.revenue_leak.direct_annual_loss_eur,
+            "efficiencyMonthlyUpliftEur": client.revenue_leak.efficiency_monthly_uplift_eur,
+            "efficiencyAnnualUpliftEur": client.revenue_leak.efficiency_annual_uplift_eur,
+            "methodologyNote": client.revenue_leak.methodology_note,
             # --- funnel-model additions (Sanity's content lake is schemaless at
             # write time, so these are safe to add; the Studio schema/template that
             # RENDERS them is a separate, external concern — not covered here) ---
-            "modelVersion": audit.revenue_leak.model_version,
-            "totalMonthlyLossEurLow": audit.revenue_leak.total_monthly_loss_eur_low,
-            "totalMonthlyLossEurHigh": audit.revenue_leak.total_monthly_loss_eur_high,
-            "totalAnnualLossEurLow": audit.revenue_leak.total_annual_loss_eur_low,
-            "totalAnnualLossEurHigh": audit.revenue_leak.total_annual_loss_eur_high,
-            "costMonthlyEur": audit.revenue_leak.cost_monthly_eur,
-            "leakShareOfRevenueLow": audit.revenue_leak.leak_share_of_revenue_low,
-            "leakShareOfRevenueHigh": audit.revenue_leak.leak_share_of_revenue_high,
+            "modelVersion": client.revenue_leak.model_version,
+            "totalMonthlyLossEurLow": client.revenue_leak.total_monthly_loss_eur_low,
+            "totalMonthlyLossEurHigh": client.revenue_leak.total_monthly_loss_eur_high,
+            "totalAnnualLossEurLow": client.revenue_leak.total_annual_loss_eur_low,
+            "totalAnnualLossEurHigh": client.revenue_leak.total_annual_loss_eur_high,
+            "costMonthlyEur": client.revenue_leak.cost_monthly_eur,
+            "leakShareOfRevenueLow": client.revenue_leak.leak_share_of_revenue_low,
+            "leakShareOfRevenueHigh": client.revenue_leak.leak_share_of_revenue_high,
             "funnel": {
-                "monthlySessions": audit.revenue_leak.funnel.monthly_sessions,
-                "conversionRate": audit.revenue_leak.funnel.conversion_rate,
-                "aovEur": audit.revenue_leak.funnel.aov_eur,
-                "monthlyRevenueEur": audit.revenue_leak.funnel.monthly_revenue_eur,
-                "operatorMonthlyRevenueEur": audit.revenue_leak.funnel.operator_monthly_revenue_eur,
-                "dataSource": audit.revenue_leak.funnel.data_source,
-                "methodologyNote": audit.revenue_leak.funnel.methodology_note,
-            } if audit.revenue_leak.funnel else None,
+                "monthlySessions": client.revenue_leak.funnel.monthly_sessions,
+                "conversionRate": client.revenue_leak.funnel.conversion_rate,
+                "aovEur": client.revenue_leak.funnel.aov_eur,
+                "monthlyRevenueEur": client.revenue_leak.funnel.monthly_revenue_eur,
+                "operatorMonthlyRevenueEur": client.revenue_leak.funnel.operator_monthly_revenue_eur,
+                "dataSource": client.revenue_leak.funnel.data_source,
+                "methodologyNote": client.revenue_leak.funnel.methodology_note,
+            } if client.revenue_leak.funnel else None,
             "dataConflicts": [
                 {
                     "_key": _key(),
@@ -420,11 +447,11 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                     "severity": c.severity,
                     "messageNl": c.message_nl,
                 }
-                for c in audit.revenue_leak.data_conflicts
+                for c in client.revenue_leak.data_conflicts
             ],
             "modelWarnings": [
                 {"_key": _key(), "kind": w.kind, "detail": w.detail}
-                for w in audit.revenue_leak.model_warnings
+                for w in client.revenue_leak.model_warnings
             ],
             "layers": [
                 {
@@ -472,7 +499,7 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                         for m in l.metrics
                     ],
                 }
-                for l in audit.revenue_leak.layers
+                for l in client.revenue_leak.layers
             ],
             "ceoTriggers": [
                 {
@@ -481,31 +508,59 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
                     "kpi": t.kpi,
                     "whatCeoSees": t.what_ceo_sees,
                     "benchmark": t.benchmark,
-                    "alarmSignal": t.alarm_signal,
                     "realMeaning": t.real_meaning,
-                    "tradualPitch": t.tradual_pitch,
-                    "tradualSolution": t.tradual_solution,
                     "triggered": t.triggered,
                 }
-                for t in audit.revenue_leak.ceo_triggers
+                for t in client.revenue_leak.ceo_triggers
             ],
-            "roi": {
-                "monthlyLeakEur": audit.revenue_leak.roi.monthly_leak_eur,
-                "annualLeakEur": audit.revenue_leak.roi.annual_leak_eur,
-                "stackRebuildCostEur": audit.revenue_leak.roi.stack_rebuild_cost_eur,
-                "paybackMonths": audit.revenue_leak.roi.payback_months,
-                "yearOneNetReturnEur": audit.revenue_leak.roi.year_one_net_return_eur,
-                "monthlyLeakEurLow": audit.revenue_leak.roi.monthly_leak_eur_low,
-                "monthlyLeakEurHigh": audit.revenue_leak.roi.monthly_leak_eur_high,
-                "annualLeakEurLow": audit.revenue_leak.roi.annual_leak_eur_low,
-                "annualLeakEurHigh": audit.revenue_leak.roi.annual_leak_eur_high,
-                "paybackMonthsBest": audit.revenue_leak.roi.payback_months_best,
-                "paybackMonthsWorst": audit.revenue_leak.roi.payback_months_worst,
-                "yearOneNetReturnEurLow": audit.revenue_leak.roi.year_one_net_return_eur_low,
-                "yearOneNetReturnEurHigh": audit.revenue_leak.roi.year_one_net_return_eur_high,
-                "paysBackWithin12Months": audit.revenue_leak.roi.pays_back_within_12_months,
-            } if audit.revenue_leak.roi else None,
-        } if audit.revenue_leak else None,
+            # No "roi": it is priced against the Stack Rebuild fee — sales material that
+            # stays on the internal dashboard, not in the client's report.
+        } if client.revenue_leak else None,
+
+        # Built from the client projection (client_report.py), like the web report.
+        "actions": [
+            {
+                "_key": _key(),
+                "actionKey": a.action_key,
+                "title": a.title_nl,
+                "whatToDo": a.what_to_do_nl,
+                "effort": a.effort,
+                "effortDaysLow": a.effort_days_low,
+                "effortDaysHigh": a.effort_days_high,
+                "owner": a.owner,
+                "monthlyImpactEurLow": a.monthly_low,
+                "monthlyImpactEurHigh": a.monthly_high,
+                "priced": a.priced,
+                "confidence": a.confidence,
+                "verifyManually": a.verify_manually,
+                "remeasureMetric": a.remeasure_metric,
+                "remeasureAfterDays": a.remeasure_after_days,
+            }
+            for a in (client.revenue_leak.actions if client.revenue_leak else [])
+        ],
+        "assumptions": [
+            {
+                "_key": _key(),
+                "key": x.key,
+                "label": x.label_nl,
+                "value": x.value,
+                "unit": x.unit,
+                "source": x.source,
+                "explanation": x.explanation_nl,
+            }
+            for x in client.assumptions
+        ],
+        "citations": [
+            {
+                "_key": _key(),
+                "key": c.key,
+                "source": c.source,
+                "figure": c.figure_nl,
+                "note": c.note_nl,
+                "verified": c.verified,
+            }
+            for c in client.citations
+        ],
 
         "adTrafficImpact": {
             "estPostClickBouncePct": audit.ad_traffic_impact.est_post_click_bounce_pct,
@@ -513,7 +568,7 @@ async def build_sanity_export(audit: FullAuditData) -> dict:
             "estDropOffPer1000Clicks": audit.ad_traffic_impact.est_drop_off_per_1000_clicks,
             "estMonthlyLostRevenueEurLow": audit.ad_traffic_impact.est_monthly_lost_revenue_eur_low,
             "estMonthlyLostRevenueEurHigh": audit.ad_traffic_impact.est_monthly_lost_revenue_eur_high,
-            "estWastedAdSpendPct": audit.ad_traffic_impact.est_wasted_ad_spend_pct,
+            "estAttributionLossPct": audit.ad_traffic_impact.est_attribution_loss_pct,
             "bounceDrivers": audit.ad_traffic_impact.bounce_drivers,
             "methodologyNote": audit.ad_traffic_impact.methodology_note,
         } if audit.ad_traffic_impact else None,

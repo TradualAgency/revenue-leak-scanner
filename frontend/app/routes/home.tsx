@@ -5,6 +5,7 @@ import PricingCard from "~/components/PricingCard";
 import TestimonialCard from "~/components/TestimonialCard";
 import FaqItem from "~/components/FaqItem";
 import LogoMarquee from "~/components/LogoMarquee";
+import { BOOK_A_CALL_URL } from "~/lib/links";
 
 export function meta() {
   return [
@@ -299,7 +300,7 @@ export default function Home() {
                 { text: "Ongoing monitoring of your technical foundation" },
               ]}
               ctaLabel="Book a Free Strategy Call"
-              ctaHref="mailto:info@tradual.com"
+              ctaHref={BOOK_A_CALL_URL}
               ctaExternal
             />
           </div>

@@ -39,7 +39,7 @@ Analyseer in volgorde van impact:
 
 - `est_post_click_bounce_pct: null` → geen meting beschikbaar, géén bounce-claim schrijven
 - `est_monthly_lost_revenue_eur_low: null` → geen schatting mogelijk, géén bedragen noemen
-- `est_wasted_ad_spend_pct: null` → attribution loss onbekend, géén uitspraak doen
+- `est_attribution_loss_pct: null` → attribution loss onbekend, géén uitspraak doen
 
 Wanneer data ontbreekt maar je twijfelt: sla die conclusie over.
 

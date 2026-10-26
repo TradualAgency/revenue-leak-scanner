@@ -13,7 +13,9 @@ from app.full_audit.schemas import (
     AiAnalysis,
     AiBloatInsight,
     AiSkillInsight,
+    FindingOut,
     FullAuditData,
+    INTERNAL_WARNING_KINDS,
     ShopifyMigrationInsight,
     StrategicRoadmap,
 )
@@ -120,8 +122,10 @@ def _revenue_leak_for_ai(audit: FullAuditData) -> dict | None:
         "total_monthly_loss_eur_high": rl.total_monthly_loss_eur_high,
         "cost_monthly_eur": rl.cost_monthly_eur,
         "data_conflicts": [c.message_nl for c in rl.data_conflicts],
-        "model_warnings": [w.detail for w in rl.model_warnings],
-        "roi": rl.roi.model_dump(mode="json") if rl.roi else None,
+        # No ROI / Stack Rebuild pricing and no sales pitch copy: skill output ends up
+        # in the client's Sanity report, so internal sales material stays out of the
+        # input too. See client_report.py.
+        "model_warnings": [w.detail for w in rl.model_warnings if w.kind not in INTERNAL_WARNING_KINDS],
         "layers": [
             {
                 "layer": layer.layer,
@@ -149,7 +153,10 @@ def _revenue_leak_for_ai(audit: FullAuditData) -> dict | None:
             }
             for layer in rl.layers
         ],
-        "ceo_triggers": [t.model_dump(mode="json") for t in rl.ceo_triggers if t.triggered],
+        "ceo_triggers": [
+            t.model_dump(mode="json", include={"category", "kpi", "what_ceo_sees", "benchmark", "real_meaning"})
+            for t in rl.ceo_triggers if t.triggered
+        ],
     }
 
 
@@ -291,7 +298,6 @@ def _top_summary_payload(audit: FullAuditData) -> str:
             "core_thesis": audit.core_thesis,
             "biggest_tech_risk": audit.biggest_tech_risk,
             "biggest_tech_opportunity": audit.biggest_tech_opportunity,
-            "est_performance_lift_percent": audit.est_performance_lift_percent,
             "audit_summary": audit.audit_summary,
         },
         "platform_architecture": audit.platform_architecture.model_dump(mode="json") if audit.platform_architecture else None,
@@ -318,6 +324,46 @@ def _top_summary_payload(audit: FullAuditData) -> str:
     }, ensure_ascii=False)
 
 
+def _roadmap_findings(audit: FullAuditData) -> list[dict]:
+    """The allowlist a roadmap phase may reference by `finding_ids`. The model picks
+    which findings a phase resolves; the euros are summed in attach_roadmap_impact."""
+    if not audit.revenue_leak:
+        return []
+    return [
+        {
+            "finding_id": f.finding_id,
+            "metric": f.metric,
+            "signal": f.signal,
+            "monthly_eur_low": f.monthly_low,
+            "monthly_eur_high": f.monthly_high,
+            "priced": f.priced,
+        }
+        for f in audit.revenue_leak.findings
+    ]
+
+
+def attach_roadmap_impact(roadmap: StrategicRoadmap, findings: list[FindingOut]) -> StrategicRoadmap:
+    """Replace whatever euro figure the LLM might have written with the sum of the
+    registry findings each phase claims. Unknown ids are dropped, and a finding counts
+    only in the first phase that claims it — two phases fixing the same leak must not
+    add up to more than the leak."""
+    by_id = {f.finding_id: f for f in findings}
+    claimed: set[str] = set()
+    for phase in sorted(roadmap.phases, key=lambda p: p.phase):
+        ids = [fid for fid in dict.fromkeys(phase.finding_ids) if fid in by_id and fid not in claimed]
+        claimed.update(ids)
+        phase.finding_ids = ids
+        phase.est_monthly_revenue_impact_eur = None
+        priced = [by_id[fid] for fid in ids if by_id[fid].priced]
+        if priced:
+            # Rounded to €100 like every other total in the report.
+            phase.est_monthly_impact_eur_low = float(round(sum(f.monthly_low or 0 for f in priced) / 100) * 100)
+            phase.est_monthly_impact_eur_high = float(round(sum(f.monthly_high or 0 for f in priced) / 100) * 100)
+        else:
+            phase.est_monthly_impact_eur_low = phase.est_monthly_impact_eur_high = None
+    return roadmap
+
+
 def _roadmap_payload(audit: FullAuditData, prior: dict) -> str:
     return json.dumps({
         "store_url": audit.store_url,
@@ -327,7 +373,6 @@ def _roadmap_payload(audit: FullAuditData, prior: dict) -> str:
             "core_thesis": audit.core_thesis,
             "biggest_tech_risk": audit.biggest_tech_risk,
             "biggest_tech_opportunity": audit.biggest_tech_opportunity,
-            "est_performance_lift_percent": audit.est_performance_lift_percent,
         },
         "performance": {
             "mobile": audit.performance.mobile.model_dump(mode="json") if (audit.performance and audit.performance.mobile) else None,
@@ -348,6 +393,7 @@ def _roadmap_payload(audit: FullAuditData, prior: dict) -> str:
         "rich_results": audit.rich_results.model_dump(mode="json") if audit.rich_results else None,
         "business_context": _business_context(audit),
         "prior_skill_insights": prior,
+        "roadmap_findings": _roadmap_findings(audit),
     }, ensure_ascii=False)
 
 
@@ -546,6 +592,7 @@ async def run_ai_analysis(audit: FullAuditData, pages: list[dict] | None = None)
     roadmap: StrategicRoadmap | None = None
     try:
         roadmap = await _call_roadmap_skill(client, _roadmap_payload(audit, prior_insights))
+        roadmap = attach_roadmap_impact(roadmap, audit.revenue_leak.findings if audit.revenue_leak else [])
     except Exception as exc:
         logger.warning("Roadmap skill failed: %s", exc)
 

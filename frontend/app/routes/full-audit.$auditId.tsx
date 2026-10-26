@@ -10,11 +10,16 @@ import {
   listCompetitorBenchmarkRuns,
   updateCompetitorSet,
 } from "~/lib/api";
-import { eur, eurRange, severityByShare } from "~/lib/format";
+import { conflictTitle, eur, eurRange, severityByShare } from "~/lib/format";
 import { useOperatorKey } from "~/lib/operatorKey";
+import FixAgentsPanel from "~/components/operator/FixAgentsPanel";
+import VerificationPanel from "~/components/operator/VerificationPanel";
+import OperatorGate from "~/components/operator/OperatorGate";
+import ActionList from "~/components/report/ActionList";
+import AdTrafficImpact from "~/components/report/AdTrafficImpact";
+import RoadmapSection from "~/components/report/RoadmapSection";
 import type {
   AccessibilityHealth,
-  AdTrafficImpact,
   AiAnalysis,
   AiBloatInsight,
   CompetitorBenchmarkStatusResponse,
@@ -32,6 +37,7 @@ import type {
   DetectedScript,
   DnsEmailHealth,
   DomainHealth,
+  FindingOut,
   FullAuditData,
   FullAuditStatusResponse,
   MarketplacePresence,
@@ -344,7 +350,11 @@ function ThirdPartySection({ data }: { data: NonNullable<FullAuditData["third_pa
             <tbody>
               {data.detected_scripts.map((s: DetectedScript) => (
                 <tr key={s.name} className="border-b border-white/5 last:border-0">
-                  <td className="py-2 pr-3 font-medium text-white">{s.name}</td>
+                  <td className="py-2 pr-3 font-medium text-white">
+                    {s.name}
+                    {s.domain && <span className="block text-[10px] font-normal text-white/40">{s.domain}</span>}
+                    {s.recommendation && <span className="block text-[10px] font-normal text-[#c5a96f]/80">{s.recommendation}</span>}
+                  </td>
                   <td className="py-2 pr-3 text-white/60">{s.purpose ?? "—"}</td>
                   <td className="py-2 pr-3 text-white/60">{s.size_kb != null ? `${s.size_kb}KB` : "—"}</td>
                   <td className="py-2 pr-3 text-white/60">{s.blocking_time_ms != null ? `${s.blocking_time_ms}ms` : "—"}</td>
@@ -747,7 +757,7 @@ function DataConflictBanner({ conflicts }: { conflicts: DataConflict[] }) {
           className={`border rounded-lg p-3 ${c.severity === "critical" ? "border-red-500/40 bg-red-500/10" : "border-amber-500/40 bg-amber-500/10"}`}
         >
           <p className={`text-[11px] font-semibold uppercase tracking-wide mb-1 ${c.severity === "critical" ? "text-red-400" : "text-amber-400"}`}>
-            Tegenstrijdige invoer — {c.ratio.toFixed(1)}x verschil
+            {conflictTitle(c)}
           </p>
           <p className="text-xs text-white/60 leading-relaxed">{c.message_nl}</p>
         </div>
@@ -1071,36 +1081,50 @@ function RevenueLeakSection({ data }: { data: RevenueLeakReport }) {
   );
 }
 
-function AdTrafficImpactSection({ data }: { data: AdTrafficImpact }) {
-  const hasWaste = data.est_wasted_ad_spend_pct != null;
-  if (!data.bounce_drivers.length && !hasWaste) return null;
+// Operator view of the registry: every finding, priced or not, with the bookkeeping the
+// client page keeps behind "Onderbouwing" — so a number can be traced before it's sent.
+function FindingsSection({ findings }: { findings: FindingOut[] }) {
+  if (findings.length === 0) return null;
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-      <p className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-3">Ad-klik detail</p>
-      <div className="flex gap-6 mb-3">
-        {data.est_post_click_bounce_pct != null && (
-          <div>
-            <p className="text-2xl font-bold text-[#c5a96f]">{data.est_post_click_bounce_pct}%</p>
-            <p className="text-xs text-white/40">bounce (basislijn {data.bounce_baseline_pct}%)</p>
-          </div>
-        )}
-        {hasWaste && (
-          <div>
-            <p className="text-2xl font-bold text-orange-400">{data.est_wasted_ad_spend_pct}%</p>
-            <p className="text-xs text-white/40">blind ad-budget</p>
-          </div>
-        )}
+    <SectionCard title="Bevindingen (registry)">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 text-left text-gray-400 uppercase tracking-wide">
+              {["Finding", "€/mnd", "Zekerheid", "Bron", "Blootstelling × uplift", "Gemeld door"].map((h) => (
+                <th key={h} className="py-1.5 pr-3 font-medium">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f) => (
+              <tr key={f.finding_id} className="border-b border-gray-50 last:border-0 align-top">
+                <td className="py-2 pr-3">
+                  <span className="font-mono text-gray-800">{f.finding_id}</span>
+                  {f.signal && <span className="block text-[10px] text-gray-500 max-w-xs">{f.signal}</span>}
+                </td>
+                <td className="py-2 pr-3 tabular-nums whitespace-nowrap">
+                  {f.priced ? eurRange(f.monthly_low, f.monthly_high) : (
+                    <span className="text-gray-400 italic">{f.verify_manually ? "verifiëren" : "ongeprijsd"}</span>
+                  )}
+                </td>
+                <td className="py-2 pr-3">{f.confidence}</td>
+                <td className="py-2 pr-3">
+                  {f.citation ?? "—"}
+                  {f.citation && f.citation_verified === false && <span className="block text-[10px] text-amber-600">unverified</span>}
+                </td>
+                <td className="py-2 pr-3 tabular-nums whitespace-nowrap text-gray-500">
+                  {f.exposure_share != null && f.uplift_high != null
+                    ? `${(f.exposure_share * 100).toFixed(0)}% × ${((f.uplift_low ?? 0) * 100).toFixed(1)}–${(f.uplift_high * 100).toFixed(1)}%`
+                    : "—"}
+                </td>
+                <td className="py-2 text-gray-500">{f.sources.join(", ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      {data.bounce_drivers.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {data.bounce_drivers.map((d, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs text-white/50">
-              <span className="text-[#c5a96f] shrink-0">↑</span>{d}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    </SectionCard>
   );
 }
 
@@ -1889,7 +1913,10 @@ function RetentionComplianceSection({
               />
             )}
             {compliance.gpsr_responsible_person_mentioned != null && (
-              <Pill label="GPSR: verantwoordelijke partij vermeld" tone="good" />
+              <Pill
+                label={compliance.gpsr_responsible_person_mentioned ? "GPSR: verantwoordelijke partij vermeld" : "GPSR: verantwoordelijke partij niet gevonden"}
+                tone={compliance.gpsr_responsible_person_mentioned ? "good" : "warn"}
+              />
             )}
           </div>
           {compliance.evidence && <p className="text-xs text-gray-500">{compliance.evidence}</p>}
@@ -2038,10 +2065,18 @@ function SanityExportSection({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export default function FullAuditResults() {
+// Internal working file: every field, sales copy and ROI included. Prospects get
+// /revenue-leak/:auditId, which reads the client projection from its own endpoint.
+export default function FullAuditResultsPage() {
+  return (
+    <OperatorGate>
+      <FullAuditResults />
+    </OperatorGate>
+  );
+}
+
+function FullAuditResults() {
   const { auditId } = useParams<{ auditId: string }>();
-  // This URL is a shareable capability link, so a prospect can be on this page. The
-  // operator-only sections render on key presence, not on the URL.
   const operatorKey = useOperatorKey();
   const [statusData, setStatusData] = useState<FullAuditStatusResponse | null>(null);
   const [auditData, setAuditData] = useState<FullAuditData | null>(null);
@@ -2161,6 +2196,25 @@ export default function FullAuditResults() {
           {/* Results */}
           {isReady && auditData && (
             <>
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  to={`/revenue-leak/${auditId}`}
+                  className="bg-tradual-accent text-tradual-primary px-5 py-2 text-xs font-medium hover:opacity-90 transition-opacity"
+                >
+                  Klantrapport openen →
+                </Link>
+                <span className="text-xs text-gray-400">Wat de klant ziet: zonder pitchteksten, ROI en contactgegevens.</span>
+              </div>
+
+              {(auditData.pipeline_warnings ?? []).length > 0 && (
+                <div className="border border-amber-200 bg-amber-50 rounded-2xl p-4 text-xs text-amber-800">
+                  <p className="font-semibold uppercase tracking-wide mb-1">Onderdelen overgeslagen door een fout</p>
+                  <ul className="space-y-0.5 font-mono">
+                    {auditData.pipeline_warnings!.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                </div>
+              )}
+
               {/* Top summary */}
               {(auditData.core_thesis || auditData.biggest_tech_risk) && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -2236,8 +2290,19 @@ export default function FullAuditResults() {
                     </div>
                   )}
                   <RevenueLeakSection data={auditData.revenue_leak} />
+                  <FindingsSection findings={auditData.revenue_leak.findings ?? []} />
+                  <ActionList actions={auditData.revenue_leak.actions ?? []} />
+                  {auditData.revenue_leak.verification && (
+                    <VerificationPanel
+                      report={auditData.revenue_leak.verification}
+                      findings={auditData.revenue_leak.findings ?? []}
+                    />
+                  )}
                 </>
               )}
+              {auditData.ad_traffic_impact && <AdTrafficImpact data={auditData.ad_traffic_impact} />}
+              {auditData.ai_analysis?.roadmap && <RoadmapSection roadmap={auditData.ai_analysis.roadmap} />}
+              {auditId && operatorKey && <FixAgentsPanel auditId={auditId} />}
               {auditData.competitor_benchmark && <CompetitorBenchmarkSection data={auditData.competitor_benchmark} />}
               {auditId && operatorKey && <CompetitorBenchmarkPanel fullAuditId={auditId} />}
               {auditData.third_party_scripts && <ThirdPartySection data={auditData.third_party_scripts} />}

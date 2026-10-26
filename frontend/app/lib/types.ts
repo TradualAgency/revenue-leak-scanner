@@ -26,18 +26,23 @@ export interface ReportStatusResponse {
 export interface ReportSummaryResponse {
   report_id: string;
   status: string;
+  currency: "EUR";
+  /** Set on scans priced by the full audit's funnel model; null on older scans. */
+  model_version: string | null;
   performance_score: number | null;
   plugin_count: number | null;
-  estimated_monthly_loss_min: number | null;
-  estimated_monthly_loss_max: number | null;
+  estimated_monthly_loss_low: number | null;
+  estimated_monthly_loss_high: number | null;
+  /** Older scans only: one figure from the retired model — an indication, not a range. */
+  legacy_monthly_loss_estimate: number | null;
   total_plugin_cost_monthly: number | null;
-  avg_load_time_ms: number | null;
-  excess_load_time: number | null;
-  blended_loss_rate: number | null;
-  speed_source: string | null;
+  lcp_ms: number | null;
   pages_scanned: string[] | null;
   plugins: DetectedPlugin[] | null;
-  quick_wins: string[] | null;
+  findings: FindingOut[];
+  actions: ActionItem[];
+  assumptions: ClientAssumption[];
+  data_conflicts: DataConflict[];
 }
 
 export interface DetectedPlugin {
@@ -64,6 +69,8 @@ export interface FullAuditRequest {
   monthly_sessions?: number;
   conversion_rate_pct?: number;
   monthly_ad_spend_eur?: number;
+  mobile_share_pct?: number;
+  mobile_conversion_rate_pct?: number;
 }
 
 export interface FullAuditCreateResponse {
@@ -151,6 +158,29 @@ export interface AiBloatInsight {
   candidates: AiBloatCandidate[];
 }
 
+export interface RoadmapPhase {
+  phase: number;
+  name: string;
+  timeframe: string;
+  objective: string;
+  actions: string[];
+  expected_outcome: string;
+  dependencies: string[];
+  /** Registry findings this phase resolves; the euro range is summed from them. */
+  finding_ids?: string[];
+  est_monthly_impact_eur_low?: number | null;
+  est_monthly_impact_eur_high?: number | null;
+}
+
+export interface StrategicRoadmap {
+  executive_summary: string;
+  north_star_metric: string;
+  top_priorities: string[];
+  quick_wins: string[];
+  phases: RoadmapPhase[];
+  total_timeline: string | null;
+}
+
 export interface AiAnalysis {
   cro: AiSkillInsight | null;
   deliverability: AiSkillInsight | null;
@@ -158,10 +188,11 @@ export interface AiAnalysis {
   shopify_migration: ShopifyMigrationInsight | null;
   ad_bounce_revenue: AiSkillInsight | null;
   bloat: AiBloatInsight | null;
+  roadmap?: StrategicRoadmap | null;
   cross_section_thesis: string | null;
 }
 
-export type DataSource = "measured" | "heuristic";
+export type DataSource = "measured" | "partial" | "heuristic";
 
 export interface SeRankingTraffic {
   domain: string;
@@ -197,7 +228,7 @@ export interface AdTrafficImpact {
   est_drop_off_per_1000_clicks: number | null;
   est_monthly_lost_revenue_eur_low: number | null;
   est_monthly_lost_revenue_eur_high: number | null;
-  est_wasted_ad_spend_pct: number | null;
+  est_attribution_loss_pct: number | null;
   bounce_drivers: string[];
   methodology_note: string | null;
   data_source: DataSource;
@@ -240,10 +271,12 @@ export interface FunnelModel {
   operator_monthly_revenue_eur: number | null;
   data_source: DataSource;
   methodology_note: string | null;
+  mobile_share_source?: InputSource;
+  mobile_conversion_rate?: number | null;
 }
 
 export interface DataConflict {
-  kind: "revenue_vs_funnel" | "ad_spend_vs_revenue";
+  kind: "revenue_vs_funnel" | "ad_spend_vs_revenue" | "mobile_cr_vs_overall";
   operator_value_eur: number;
   model_value_eur: number;
   ratio: number;
@@ -283,16 +316,21 @@ export interface RevenueLeakMetric {
   pages_affected?: string[];
 }
 
-export interface CeoTriggerKpi {
+/** What a prospect may see of a CEO trigger — see ClientAuditReport. */
+export interface ClientCeoTrigger {
   category: string;
   kpi: string;
   what_ceo_sees: string;
   benchmark: string | null;
-  alarm_signal: string;
   real_meaning: string;
+  triggered: boolean;
+}
+
+/** Internal: adds the sales copy that must never reach client output. */
+export interface CeoTriggerKpi extends ClientCeoTrigger {
+  alarm_signal: string;
   tradual_pitch: string;
   tradual_solution: string;
-  triggered: boolean;
 }
 
 export interface RoiCalculation {
@@ -334,7 +372,52 @@ export interface RevenueLeakLayer {
   unpriced_finding_count?: number;
 }
 
-export interface RevenueLeakReport {
+/** One registry finding, flat — every euro in the report is summed from these. */
+export interface FindingOut {
+  finding_id: string;
+  owning_layer: number;
+  stage: string | null;
+  kind: "revenue" | "cost" | "diagnostic" | "restatement";
+  priority: "critical" | "high" | "medium" | "low";
+  status: "good" | "warning" | "critical" | "not-measured";
+  metric: string;
+  signal: string | null;
+  monthly_low: number | null;
+  monthly_high: number | null;
+  priced: boolean;
+  confidence: "high" | "medium" | "low";
+  citation: string | null;
+  citation_verified: boolean | null;
+  exposure_share: number | null;
+  uplift_low: number | null;
+  uplift_high: number | null;
+  pages_affected: string[];
+  sources: string[];
+  verify_manually: boolean;
+}
+
+/** One thing to do — effort/owner from a fixed table, euros from its findings. */
+export interface ActionItem {
+  action_key: string;
+  title_nl: string;
+  what_to_do_nl: string;
+  effort: "S" | "M" | "L";
+  effort_days_low: number;
+  effort_days_high: number;
+  owner: string;
+  remeasure_metric: string;
+  remeasure_after_days: number;
+  finding_ids: string[];
+  monthly_low: number | null;
+  monthly_high: number | null;
+  priced: boolean;
+  confidence: "high" | "medium" | "low";
+  verify_manually: boolean;
+  priority: "critical" | "high" | "medium" | "low";
+}
+
+/** The fields the operator report and the client report share. */
+export interface RevenueLeakReportBase {
   layers: RevenueLeakLayer[];
   total_monthly_loss_eur: number | null;
   total_annual_loss_eur: number | null;
@@ -343,8 +426,6 @@ export interface RevenueLeakReport {
   efficiency_monthly_uplift_eur: number | null;
   efficiency_annual_uplift_eur: number | null;
   methodology_note: string | null;
-  ceo_triggers: CeoTriggerKpi[];
-  roi: RoiCalculation | null;
   data_source: DataSource;
   // Present only when computed by the funnel-model rewrite. `model_version` is the
   // frontend's branch key: absent/null means a pre-rewrite (v1) report stored before
@@ -360,6 +441,39 @@ export interface RevenueLeakReport {
   cost_monthly_eur?: number | null;
   leak_share_of_revenue_low?: number | null;
   leak_share_of_revenue_high?: number | null;
+  findings?: FindingOut[];
+  actions?: ActionItem[];
+}
+
+export interface RevenueLeakReport extends RevenueLeakReportBase {
+  ceo_triggers: CeoTriggerKpi[];
+  roi: RoiCalculation | null;
+  /** Finding-verifier verdicts (operator-only). Null/absent: not verified. */
+  verification?: VerificationReport | null;
+}
+
+export type FindingVerdictKind = "confirmed" | "refuted" | "unverifiable";
+
+export interface FindingVerdict {
+  finding_id: string;
+  verdict: FindingVerdictKind;
+  evidence_nl: string;
+  reason_nl: string;
+}
+
+export interface VerificationReport {
+  verdicts: FindingVerdict[];
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  used_admin_data: boolean;
+  /** Per failed group: "<group>: <error>" — those findings got no verdict. */
+  errors: string[];
+}
+
+/** Client projection: no sales copy, no ROI (priced against the Stack Rebuild fee). */
+export interface ClientRevenueLeakReport extends RevenueLeakReportBase {
+  ceo_triggers: ClientCeoTrigger[];
 }
 
 export interface BloatItem {
@@ -655,6 +769,40 @@ export interface FullAuditData {
   competitor_benchmark: CompetitorBenchmarkReport | null;
   ai_analysis: AiAnalysis | null;
   sanity_export: Record<string, unknown> | null;
+  pipeline_warnings?: string[];
+}
+
+export interface ClientAssumption {
+  key: string;
+  label_nl: string;
+  value: number;
+  unit: "eur" | "pct" | "count";
+  source: InputSource;
+  explanation_nl: string;
+}
+
+export interface ClientCitation {
+  key: string;
+  source: string;
+  figure_nl: string;
+  note_nl: string;
+  verified: boolean;
+}
+
+/** GET /full-audit/{id}/report — the public, prospect-facing projection. */
+export interface ClientAuditReport {
+  id: string;
+  status: AuditStatus;
+  store_url: string;
+  company_name: string | null;
+  completed_at: string | null;
+  revenue_leak: ClientRevenueLeakReport | null;
+  ad_traffic_impact: AdTrafficImpact | null;
+  seranking_traffic: { monthly_organic_sessions: number; monthly_paid_sessions: number } | null;
+  roadmap: StrategicRoadmap | null;
+  assumptions: ClientAssumption[];
+  citations: ClientCitation[];
+  methodology_note: string | null;
 }
 
 export interface FullAuditResponse {
@@ -667,21 +815,6 @@ export interface FullAuditResponse {
   completed_at: string | null;
   data: FullAuditData | null;
   error_message: string | null;
-}
-
-export interface ReportFullResponse {
-  report_id: string;
-  lead_id: string;
-  status: string;
-  pages_discovered: number | null;
-  avg_load_time_ms: number | null;
-  performance_score: number | null;
-  estimated_monthly_loss: number | null;
-  total_plugin_cost_monthly: number | null;
-  plugins: DetectedPlugin[];
-  report_data: Record<string, unknown> | null;
-  created_at: string;
-  completed_at: string | null;
 }
 
 // --- Competitor benchmark (marktvergelijking) --------------------------------------
@@ -825,6 +958,7 @@ export interface LayerScore {
 
 export interface GapFinding {
   finding_id: string;
+  metric_key?: string | null;
   layer: number;
   label_nl: string;
   store_value: number | null;
@@ -838,6 +972,7 @@ export interface GapFinding {
   kind: "revenue" | "diagnostic";
   confidence: "high" | "medium" | "low";
   citation: string | null;
+  citations?: string[];
   note_nl: string | null;
 }
 
@@ -971,4 +1106,76 @@ export interface CompetitorSetUpdatePayload {
   remove: string[];
   location_code?: number | null;
   language_code?: string | null;
+}
+
+// --- Fix agents (operator-only) -------------------------------------------------------
+
+export type FixAgentName = "speed_bloat" | "tracking" | "cro_pdp" | "checkout_schema";
+export type FixAgentRunStatus = "queued" | "processing" | "done" | "failed";
+
+export interface FixCodeSnippet {
+  file_path: string;
+  language: string;
+  before: string | null;
+  after: string;
+  explanation: string;
+}
+
+export interface FixItem {
+  finding_ids: string[];
+  title_nl: string;
+  steps_nl: string[];
+  code_snippets: FixCodeSnippet[];
+  apps_to_remove: string[];
+  risk: "laag" | "middel" | "hoog";
+  rollback_nl: string;
+  verification_checklist: string[];
+  verify_manually: boolean;
+  // Filled in by the backend from the findings registry and the action table — never
+  // written by the agent.
+  monthly_low: number | null;
+  monthly_high: number | null;
+  priced: boolean;
+  effort: "S" | "M" | "L" | null;
+  effort_days_low: number | null;
+  effort_days_high: number | null;
+  owner: string | null;
+  remeasure_metric: string | null;
+  remeasure_after_days: number | null;
+}
+
+export interface FixPackage {
+  agent: FixAgentName;
+  summary_nl: string;
+  fixes: FixItem[];
+  assumptions: string[];
+  used_admin_data: boolean;
+  warnings: string[];
+}
+
+export interface FixAgentRun {
+  id: string;
+  agent: FixAgentName;
+  status: FixAgentRunStatus;
+  result: FixPackage | null;
+  error_message: string | null;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface FixAgentRunsResponse {
+  audit_id: string;
+  has_admin_token: boolean;
+  shopify_shop_domain: string | null;
+  runs: FixAgentRun[];
+}
+
+export interface AdminTokenResponse {
+  has_admin_token: boolean;
+  shopify_shop_domain: string | null;
+  shop_name: string | null;
+  scopes: string[];
 }

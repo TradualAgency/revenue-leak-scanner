@@ -1,4 +1,6 @@
 import type {
+  AdminTokenResponse,
+  ClientAuditReport,
   CompetitorBenchmarkCreatePayload,
   CompetitorBenchmarkCreateResponse,
   CompetitorBenchmarkResponse,
@@ -7,6 +9,8 @@ import type {
   CompetitorRunListResponse,
   CompetitorSetUpdatePayload,
   CompetitorSetUpdateResponse,
+  FixAgentName,
+  FixAgentRunsResponse,
   FullAuditCreateResponse,
   FullAuditListResponse,
   FullAuditRequest,
@@ -14,7 +18,6 @@ import type {
   FullAuditStatusResponse,
   LeadCreatePayload,
   LeadCreateResponse,
-  ReportFullResponse,
   ReportStatusResponse,
   ReportSummaryResponse,
 } from "./types";
@@ -89,10 +92,6 @@ export function getReportSummary(reportId: string): Promise<ReportSummaryRespons
   return request<ReportSummaryResponse>(`/reports/${reportId}/summary`);
 }
 
-export function getFullReport(reportId: string): Promise<ReportFullResponse> {
-  return request<ReportFullResponse>(`/reports/${reportId}`);
-}
-
 // Operator-only: starting an audit spends PageSpeed, Anthropic, SE Ranking and
 // DataForSEO budget, so the endpoint is key-gated server-side. The /full-audit page
 // already called itself "Intern gebruik"; it just wasn't enforced.
@@ -107,8 +106,14 @@ export function getFullAuditStatus(auditId: string): Promise<FullAuditStatusResp
   return request<FullAuditStatusResponse>(`/full-audit/${auditId}/status`);
 }
 
+// Operator-only: the full working file (sales copy, ROI, contact details).
 export function getFullAudit(auditId: string): Promise<FullAuditResponse> {
-  return request<FullAuditResponse>(`/full-audit/${auditId}`);
+  return operatorRequest<FullAuditResponse>(`/full-audit/${auditId}`);
+}
+
+// Public: the prospect-facing projection behind the shareable /revenue-leak link.
+export function getClientAuditReport(auditId: string): Promise<ClientAuditReport> {
+  return request<ClientAuditReport>(`/full-audit/${auditId}/report`);
 }
 
 // Operator-only: the Sanity CMS export (contains a page password) is deliberately not
@@ -198,4 +203,29 @@ export function remeasureCompetitors(runId: string, force: boolean): Promise<Com
     method: "POST",
     body: JSON.stringify({ force }),
   });
+}
+
+// --- Fix agents (operator-only). All of these throw: a failed start or token save the
+// operator doesn't see is worse than an error message.
+
+export function listFixAgentRuns(auditId: string): Promise<FixAgentRunsResponse> {
+  return operatorRequest<FixAgentRunsResponse>(`/full-audit/${auditId}/fix-agents`);
+}
+
+export function startFixAgents(auditId: string, agents: FixAgentName[]): Promise<FixAgentRunsResponse> {
+  return operatorRequest<FixAgentRunsResponse>(`/full-audit/${auditId}/fix-agents`, {
+    method: "POST",
+    body: JSON.stringify({ agents }),
+  });
+}
+
+export function saveShopifyAdminToken(auditId: string, shopDomain: string, accessToken: string): Promise<AdminTokenResponse> {
+  return operatorRequest<AdminTokenResponse>(`/full-audit/${auditId}/admin-token`, {
+    method: "PUT",
+    body: JSON.stringify({ shop_domain: shopDomain, access_token: accessToken }),
+  });
+}
+
+export function deleteShopifyAdminToken(auditId: string): Promise<AdminTokenResponse> {
+  return operatorRequest<AdminTokenResponse>(`/full-audit/${auditId}/admin-token`, { method: "DELETE" });
 }

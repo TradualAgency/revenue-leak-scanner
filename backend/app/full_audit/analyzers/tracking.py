@@ -29,9 +29,18 @@ def _match_tool(html: str, sig: dict) -> bool:
     return False
 
 
+_CONSENT_CALL_RE = re.compile(r"""gtag\(\s*['"]consent['"]\s*,\s*['"](default|update)['"]\s*,\s*\{([^}]*)\}""")
+# The two parameters Consent Mode v2 added; a default call without them is v1.
+_CONSENT_V2_PARAMS = ("ad_user_data", "ad_personalization")
+
+
 def _detect_consent_mode_v2(html: str, cmp_or_gtm_present: bool) -> ConsentModeStatus:
-    if "gtag('consent'" in html or 'gtag("consent"' in html:
-        if "'default'" in html or '"default"' in html:
+    """Judged on the actual gtag('consent', ...) calls. The old check accepted any
+    "default" string anywhere in the page — which nearly every page contains."""
+    calls = _CONSENT_CALL_RE.findall(html)
+    if calls:
+        defaults = [body for kind, body in calls if kind == "default"]
+        if any(all(param in body for param in _CONSENT_V2_PARAMS) for body in defaults):
             return "v2-correct"
         return "v2-incorrect"
     # No inline gtag('consent'...) call in the raw HTML. If a CMP or GTM container is
@@ -52,6 +61,30 @@ def _detect_sgtm(pages: list[dict]) -> ServerSideTagging:
             if "googletagmanager.com" not in m:
                 return "yes"
     return "no"
+
+
+_WEB_PIXELS_MARKER = "webPixelsConfigList"
+_GA4_ID_RE = re.compile(r"\bG-[A-Z0-9]{6,12}\b")
+_GOOGLE_ADS_ID_RE = re.compile(r"\bAW-\d{6,12}\b")
+_META_PIXEL_ID_RE = re.compile(r"pixel_?[iI]d\\*\"\s*:\s*\\*\"?(\d{10,20})")
+
+
+def _web_pixels(html: str) -> dict[str, str]:
+    """Pixels configured through Shopify's Web Pixels Manager. They load in a sandbox a
+    static scrape can't execute, but their configuration is inlined in the page as
+    (escaped) JSON — enough to see which tags are installed. Returns tool -> evidence."""
+    start = html.find(_WEB_PIXELS_MARKER)
+    if start < 0:
+        return {}
+    segment = html[start:start + 60_000]
+    found: dict[str, str] = {}
+    if m := _GA4_ID_RE.search(segment):
+        found["Google Analytics 4"] = f"Shopify Web Pixels: {m.group(0)}"
+    if m := _GOOGLE_ADS_ID_RE.search(segment):
+        found["Google Ads"] = f"Shopify Web Pixels: {m.group(0)}"
+    if m := _META_PIXEL_ID_RE.search(segment):
+        found["Meta Pixel"] = f"Shopify Web Pixels: pixel {m.group(1)}"
+    return found
 
 
 def _estimate_attribution_loss(
@@ -101,6 +134,11 @@ async def detect_tracking(pages: list[dict]) -> TrackingDataQuality:
         if _match_tool(all_html, sig):
             found_esp.append(sig["name"])
 
+    for tool, evidence in _web_pixels(all_html).items():
+        if tool not in found_analytics:
+            found_analytics.append(tool)
+            evidence_parts.append(evidence)
+
     analytics_stack = ", ".join(found_analytics + found_esp) if (found_analytics or found_esp) else None
 
     # Duplicate GTM detection (also used below to inform consent-mode confidence)
@@ -116,12 +154,16 @@ async def detect_tracking(pages: list[dict]) -> TrackingDataQuality:
     )
     has_ga4 = any("Google Analytics 4" in a for a in found_analytics)
     has_meta = any("Meta Pixel" in a for a in found_analytics)
+    # A GTM container or Shopify's pixel sandbox can hold the pixel we didn't see, so
+    # "one of two found" there is unconfirmed, not "partial" — "partial" and "missing"
+    # add attribution loss, and a pixel we simply can't see must not.
+    hidden_pixels_possible = is_shopify or bool(gtm_ids)
     if has_ga4 and has_meta:
         pixels_health: HealthStatus = "healthy"
+    elif hidden_pixels_possible:
+        pixels_health = "to-validate"
     elif has_ga4 or has_meta:
         pixels_health = "partial"
-    elif is_shopify:
-        pixels_health = "to-validate"
     else:
         pixels_health = "missing"
 

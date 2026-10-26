@@ -15,6 +15,7 @@ audit rather than rebuilding it.
 from __future__ import annotations
 
 from app.competitor_benchmark.schemas import GapFinding, MetricComparison
+from app.full_audit.analyzers.benchmarks import inp_uplift, lcp_uplift
 from app.full_audit.analyzers.findings import FindingsRegistry, PricedFinding, price_findings
 from app.full_audit.schemas import FunnelModel
 
@@ -35,6 +36,7 @@ def _register_lcp_gap(registry: FindingsRegistry, comparisons: dict[str, MetricC
     if reference_value is None or lcp.store_value <= reference_value:
         return
     s_over = (lcp.store_value - reference_value) / 1_000
+    uplift_low, uplift_high = lcp_uplift(s_over)
     exposure = (1 - funnel.paid_share) * funnel.mobile_share
     registry.register(PricedFinding(
         finding_id="gap.lcp_mobile", owning_layer=1, stage="session", kind="revenue",
@@ -43,11 +45,11 @@ def _register_lcp_gap(registry: FindingsRegistry, comparisons: dict[str, MetricC
         priority="high", status="warning",
         calculation_note=(
             f"€{funnel.monthly_revenue_eur:,.0f} omzet x {exposure * 100:.0f}% organisch/mobiel x "
-            f"{min(0.10, s_over * 0.02) * 100:.1f}–{min(0.25, s_over * 0.05) * 100:.1f}% conversie-impact"
+            f"{uplift_low * 100:.1f}–{uplift_high * 100:.1f}% conversie-impact"
         ),
         signal=f"Jouw site is {s_over:.1f}s trager dan je markt",
-        exposure_share=exposure, uplift_low=min(0.10, s_over * 0.02), uplift_high=min(0.25, s_over * 0.05),
-        confidence="medium", citation="MARKET_MEDIAN_BENCHMARK",
+        exposure_share=exposure, uplift_low=uplift_low, uplift_high=uplift_high,
+        confidence="medium", citation="DELOITTE_MS_MILLIONS",
     ), source="competitor_benchmark")
 
 
@@ -58,7 +60,8 @@ def _register_inp_gap(registry: FindingsRegistry, comparisons: dict[str, MetricC
     reference_value = getattr(tbt, reference)
     if reference_value is None or tbt.store_value <= reference_value:
         return
-    ms_over = (tbt.store_value - reference_value) / 100
+    ms_over = tbt.store_value - reference_value
+    uplift_low, uplift_high = inp_uplift(ms_over)
     exposure = (1 - funnel.paid_share) * funnel.mobile_share
     registry.register(PricedFinding(
         finding_id="gap.inp_mobile", owning_layer=1, stage="product_view", kind="revenue",
@@ -67,41 +70,23 @@ def _register_inp_gap(registry: FindingsRegistry, comparisons: dict[str, MetricC
         priority="medium", status="warning",
         calculation_note=(
             f"€{funnel.monthly_revenue_eur:,.0f} omzet x {exposure * 100:.0f}% x "
-            f"{min(0.03, ms_over * 0.01) * 100:.1f}–{min(0.06, ms_over * 0.03) * 100:.1f}%"
+            f"{uplift_low * 100:.0f}–{uplift_high * 100:.0f}% (reactietijd {ms_over:.0f}ms trager dan je markt)"
         ),
         signal="Je site reageert trager op klikken dan je markt",
-        exposure_share=exposure, uplift_low=min(0.03, ms_over * 0.01), uplift_high=min(0.06, ms_over * 0.03),
-        confidence="medium", citation="MARKET_MEDIAN_BENCHMARK",
+        exposure_share=exposure, uplift_low=uplift_low, uplift_high=uplift_high,
+        confidence="medium", citation="INTERNAL_ESTIMATE",
     ), source="competitor_benchmark")
 
 
 def _register_checkout_gaps(registry: FindingsRegistry, comparisons: dict[str, MetricComparison]) -> None:
-    express = comparisons.get("checkout.express_methods_count")
-    if express and express.store_measured and express.store_value == 0 and express.eligible_domains >= _MIN_ELIGIBLE_FOR_ADOPTION_CLAIM:
-        measured_vals = [v.value for v in express.competitor_values if v.available]
-        if measured_vals:
-            adoption = sum(1 for v in measured_vals if v > 0) / len(measured_vals)
-            if adoption >= _EXPRESS_ADOPTION_THRESHOLD:
-                registry.register(PricedFinding(
-                    finding_id="gap.checkout_express", owning_layer=3, stage="reach_checkout", kind="revenue",
-                    metric="Mist je een snelle betaalknop die je markt al wel heeft?",
-                    what_we_measure="Express-betaalopties (Apple Pay/Google Pay/Shop Pay) verlagen frictie in checkout",
-                    priority="medium", status="warning",
-                    calculation_note=f"{adoption * 100:.0f}% van je gemeten Shopify-concurrenten heeft een express-betaalknop, jij niet",
-                    signal="Geen Apple Pay/Google Pay/Shop Pay-knop gevonden, terwijl je markt dit wel aanbiedt",
-                    exposure_share=1.0, uplift_low=0.02, uplift_high=0.05,
-                    confidence="medium", citation="BAYMARD_CHECKOUT_ABANDONMENT",
-                ), source="competitor_benchmark")
-
-    # Reuses the exact uplift formula _register_checkout_and_cro_findings applies to
-    # "checkout.address_fields" (n_over = fields - 10, slope 0.005/0.010, caps
-    # 0.08/0.15) so the gap model can't disagree with the absolute-leak model about
-    # how much a given field count costs — only the reference point differs (market
-    # median instead of the fixed Baymard baseline of 10).
+    # Same slope and caps as "checkout.address_fields" in the absolute-leak model
+    # (0.005/0.010 per field, capped 0.08/0.15) so the two can't disagree about what an
+    # extra field costs — only the reference point differs: fields over the market
+    # median here, over the fixed Baymard baseline of 10 there.
     fields = comparisons.get("checkout.address_fields")
     if fields and fields.store_measured and fields.median is not None and fields.sufficiency != "insufficient":
         if fields.store_value > fields.median + _MIN_ADDRESS_FIELD_GAP:
-            n_over = fields.store_value - 10
+            n_over = fields.store_value - fields.median
             registry.register(PricedFinding(
                 finding_id="gap.checkout_address_fields", owning_layer=3, stage="reach_checkout", kind="revenue",
                 metric="Heb je meer velden dan je markt?",
@@ -123,13 +108,43 @@ def _price_reference(comparisons: dict[str, MetricComparison], funnel: FunnelMod
     return price_findings(registry, funnel)
 
 
+def _express_adoption(express: MetricComparison | None) -> float | None:
+    """Share of measured competitors with an express-pay button, when the store has
+    none and enough Shopify competitors were measured to make an adoption claim."""
+    if not (express and express.store_measured and express.store_value == 0
+            and express.eligible_domains >= _MIN_ELIGIBLE_FOR_ADOPTION_CLAIM):
+        return None
+    measured_vals = [v.value for v in express.competitor_values if v.available]
+    if not measured_vals:
+        return None
+    return sum(1 for v in measured_vals if v > 0) / len(measured_vals)
+
+
 def _diagnostic_gaps(comparisons: dict[str, MetricComparison]) -> list[GapFinding]:
     gaps: list[GapFinding] = []
+
+    # Express pay is detected from server-rendered HTML, and Shopify often renders
+    # those buttons client-side — the same false-negative risk that keeps the
+    # absolute model's checkout.no_express_pay unpriced. Pricing it here at medium
+    # confidence (as this module used to) contradicted that on the same detection.
+    express = comparisons.get("checkout.express_methods_count")
+    adoption = _express_adoption(express)
+    if adoption is not None and adoption >= _EXPRESS_ADOPTION_THRESHOLD:
+        gaps.append(GapFinding(
+            finding_id="gap.checkout_express", metric_key="checkout.express_methods_count", layer=3, label_nl="Express-checkout t.o.v. markt",
+            store_value=express.store_value, median_value=express.median,
+            kind="diagnostic", confidence="low", citation="BAYMARD_CHECKOUT_ABANDONMENT",
+            note_nl=(
+                f"{adoption * 100:.0f}% van je gemeten Shopify-concurrenten toont een express-betaalknop, "
+                "bij jou vonden we er geen. Handmatig verifiëren: deze knoppen laden vaak pas in de "
+                "browser en zijn dan onzichtbaar voor onze meting — daarom geen bedrag."
+            ),
+        ))
 
     attribution = comparisons.get("tracking.est_attribution_loss_pct")
     if _priceable(attribution) and attribution.median is not None and attribution.store_value > attribution.median:
         gaps.append(GapFinding(
-            finding_id="gap.tracking_attribution", layer=4, label_nl="Attributieverlies t.o.v. markt",
+            finding_id="gap.tracking_attribution", metric_key="tracking.est_attribution_loss_pct", layer=4, label_nl="Attributieverlies t.o.v. markt",
             store_value=attribution.store_value, median_value=attribution.median,
             kind="diagnostic", confidence="low",
             note_nl="Diagnostisch — geen apart bedrag, telt niet mee in de omzetberekening.",
@@ -138,7 +153,7 @@ def _diagnostic_gaps(comparisons: dict[str, MetricComparison]) -> list[GapFindin
     rating = comparisons.get("future.aggregate_rating")
     if rating and rating.store_measured and rating.store_value == 0 and rating.median is not None and rating.median > 30:
         gaps.append(GapFinding(
-            finding_id="gap.schema_aggregate_rating", layer=5, label_nl="Reviewsterren t.o.v. markt",
+            finding_id="gap.schema_aggregate_rating", metric_key="future.aggregate_rating", layer=5, label_nl="Reviewsterren t.o.v. markt",
             store_value=0, median_value=rating.median,
             kind="diagnostic", confidence="low", citation="SPIEGEL_REVIEWS",
             note_nl="Diagnostisch — handmatig verifiëren, geen bedrag (zie Spiegel Research Center methodologie).",
@@ -166,12 +181,13 @@ def price_gap_to_market(
         median_lo, median_hi = median_priced.get("gap.lcp_mobile", (None, None))
         best_lo, best_hi = best_priced.get("gap.lcp_mobile", (None, None))
         gaps.append(GapFinding(
-            finding_id="gap.lcp_mobile", layer=1, label_nl="Laadtijd mobiel t.o.v. markt",
+            finding_id="gap.lcp_mobile", metric_key="speed.lcp_mobile_ms", layer=1, label_nl="Laadtijd mobiel t.o.v. markt",
             store_value=lcp.store_value if lcp else None, median_value=lcp.median if lcp else None, best_value=lcp.best if lcp else None,
             gap_to_median_eur_low=median_lo, gap_to_median_eur_high=median_hi,
             gap_to_best_eur_low=best_lo, gap_to_best_eur_high=best_hi,
             market_is_also_below_benchmark=bool(lcp and lcp.median is not None and lcp.median > 2500),
-            kind="revenue", confidence="medium", citation="MARKET_MEDIAN_BENCHMARK",
+            kind="revenue", confidence="medium", citation="DELOITTE_MS_MILLIONS",
+            citations=["DELOITTE_MS_MILLIONS", "MARKET_MEDIAN_BENCHMARK"],
         ))
 
     tbt = by_key.get("speed.tbt_ms")
@@ -179,31 +195,23 @@ def price_gap_to_market(
         median_lo, median_hi = median_priced.get("gap.inp_mobile", (None, None))
         best_lo, best_hi = best_priced.get("gap.inp_mobile", (None, None))
         gaps.append(GapFinding(
-            finding_id="gap.inp_mobile", layer=1, label_nl="Reactietijd t.o.v. markt",
+            finding_id="gap.inp_mobile", metric_key="speed.tbt_ms", layer=1, label_nl="Reactietijd t.o.v. markt",
             store_value=tbt.store_value if tbt else None, median_value=tbt.median if tbt else None, best_value=tbt.best if tbt else None,
             gap_to_median_eur_low=median_lo, gap_to_median_eur_high=median_hi,
             gap_to_best_eur_low=best_lo, gap_to_best_eur_high=best_hi,
-            kind="revenue", confidence="medium", citation="MARKET_MEDIAN_BENCHMARK",
-        ))
-
-    express = by_key.get("checkout.express_methods_count")
-    if "gap.checkout_express" in median_priced:
-        lo, hi = median_priced["gap.checkout_express"]
-        gaps.append(GapFinding(
-            finding_id="gap.checkout_express", layer=3, label_nl="Express-checkout t.o.v. markt",
-            store_value=express.store_value if express else None, median_value=express.median if express else None,
-            gap_to_median_eur_low=lo, gap_to_median_eur_high=hi,
-            kind="revenue", confidence="medium", citation="BAYMARD_CHECKOUT_ABANDONMENT",
+            kind="revenue", confidence="medium", citation="INTERNAL_ESTIMATE",
+            citations=["INTERNAL_ESTIMATE", "MARKET_MEDIAN_BENCHMARK"],
         ))
 
     fields = by_key.get("checkout.address_fields")
     if "gap.checkout_address_fields" in median_priced:
         lo, hi = median_priced["gap.checkout_address_fields"]
         gaps.append(GapFinding(
-            finding_id="gap.checkout_address_fields", layer=3, label_nl="Adresformulier t.o.v. markt",
+            finding_id="gap.checkout_address_fields", metric_key="checkout.address_fields", layer=3, label_nl="Adresformulier t.o.v. markt",
             store_value=fields.store_value if fields else None, median_value=fields.median if fields else None,
             gap_to_median_eur_low=lo, gap_to_median_eur_high=hi,
             kind="revenue", confidence="medium", citation="BAYMARD_CHECKOUT_ABANDONMENT",
+            citations=["BAYMARD_CHECKOUT_ABANDONMENT", "MARKET_MEDIAN_BENCHMARK"],
         ))
 
     gaps.extend(_diagnostic_gaps(by_key))

@@ -199,6 +199,7 @@ class LayerScore(BaseModel):
 
 class GapFinding(BaseModel):
     finding_id: str
+    metric_key: str | None = None  # the MetricComparison.key this gap is read from
     layer: int
     label_nl: str
     store_value: float | None = None
@@ -211,7 +212,10 @@ class GapFinding(BaseModel):
     market_is_also_below_benchmark: bool = False
     kind: Literal["revenue", "diagnostic"] = "revenue"
     confidence: Literal["high", "medium", "low"] = "medium"
+    # `citation` backs the euro elasticity; `citations` adds the reference point
+    # (MARKET_MEDIAN_BENCHMARK) — the market median is measured, the elasticity isn't.
     citation: str | None = None
+    citations: list[str] = []
     note_nl: str | None = None
 
 

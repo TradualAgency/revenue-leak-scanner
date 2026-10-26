@@ -26,11 +26,17 @@ class FullAudit(Base):
     monthly_sessions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     conversion_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     monthly_ad_spend_eur: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mobile_share_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mobile_conversion_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     seranking_traffic_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     seranking_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # DataForSEO competitor lookups cost real money per call — cached the same way as
     # SE Ranking traffic, with the same 30-day TTL.
     competitor_benchmark_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     competitor_benchmark_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Optional read-only Shopify Admin API access for the fix agents (operator-supplied
+    # custom-app token, Fernet-encrypted; never returned by any endpoint).
+    shopify_shop_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    shopify_admin_token_enc: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

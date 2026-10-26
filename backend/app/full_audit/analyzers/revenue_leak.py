@@ -26,10 +26,12 @@ restatements of the layer 1+3 total (theoretical CR, CPA, ROAS) — not new euro
 
 from __future__ import annotations
 
-from app.full_audit.analyzers.benchmarks import CITATIONS
+from app.full_audit.analyzers.actions import build_action_list
+from app.full_audit.analyzers.benchmarks import CITATIONS, INP_GOOD_TBT_MS, inp_uplift, lcp_uplift
 from app.full_audit.analyzers.findings import FindingsRegistry, PricedFinding, cro_finding_id, price_findings
 from app.full_audit.analyzers.funnel import build_funnel_model
 from app.full_audit.analyzers.performance import lcp_source_caveat, worst_mobile_lcp
+from app.full_audit.page_sampling import PAGE_LABELS
 from app.full_audit.schemas import (
     AccessibilityHealth,
     AdTrafficImpact,
@@ -37,10 +39,13 @@ from app.full_audit.schemas import (
     CheckoutFlow,
     CostAnalysis,
     CroObservation,
+    FindingOut,
+    OwnedChannels,
+    ShippingHealth,
+    ShopifyCatalogHealth,
     FunnelModel,
     MetricStatus,
     ModelWarning,
-    OwnedChannels,
     Performance,
     ProductFeedHealth,
     RevenueLeakLayer,
@@ -50,11 +55,12 @@ from app.full_audit.schemas import (
     RoiCalculation,
     SeRankingTraffic,
     ThirdPartyScripts,
-    TrackingDataQuality,
 )
 
 _STACK_REBUILD_COST = 35_000.0
-_MODEL_VERSION = "2.0"
+_AD_SPEND_SLOWNESS_CAP_PCT = 30.0
+_PDP_LABEL = PAGE_LABELS["pdp"]
+_MODEL_VERSION = "2.1"
 
 
 def _r(value: float) -> float:
@@ -152,6 +158,33 @@ def _metric_from_finding(
         citation=finding.citation,
         verify_manually=finding.verify_manually,
         pages_affected=finding.pages_affected,
+    )
+
+
+def _finding_out(finding: PricedFinding, priced: dict[str, tuple[float, float]]) -> FindingOut:
+    low, high = priced.get(finding.finding_id, (None, None))
+    citation = CITATIONS.get(finding.citation) if finding.citation else None
+    return FindingOut(
+        finding_id=finding.finding_id,
+        owning_layer=finding.owning_layer,
+        stage=finding.stage,
+        kind=finding.kind,
+        priority=finding.priority,
+        status=finding.status,
+        metric=finding.metric,
+        signal=finding.signal,
+        monthly_low=low,
+        monthly_high=high,
+        priced=finding.finding_id in priced,
+        confidence=finding.confidence,
+        citation=finding.citation,
+        citation_verified=citation.verified if citation else None,
+        exposure_share=finding.exposure_share,
+        uplift_low=finding.uplift_low,
+        uplift_high=finding.uplift_high,
+        pages_affected=finding.pages_affected,
+        sources=finding.sources,
+        verify_manually=finding.verify_manually,
     )
 
 
@@ -267,8 +300,9 @@ def _register_performance_findings(
     ctx["lcp_is_desktop_fallback"] = lcp_is_desktop_fallback
     lcp_caveat = lcp_source_caveat(performance, lcp_source)
 
-    if lcp_ms is not None and lcp_ms > 2_500:
-        s_over = (lcp_ms - 2_500) / 1_000
+    lcp_range = lcp_uplift((lcp_ms - 2_500) / 1_000) if lcp_ms is not None else None
+    if lcp_range is not None:
+        lcp_low, lcp_high = lcp_range
         exposure = organic_share * funnel.mobile_share
         registry.register(PricedFinding(
             finding_id="perf.lcp_mobile", owning_layer=1, stage="session", kind="revenue",
@@ -278,13 +312,13 @@ def _register_performance_findings(
             status="critical" if lcp_ms > 4_000 else "warning",
             calculation_note=(
                 f"€{funnel.monthly_revenue_eur:,.0f} omzet x {exposure * 100:.0f}% "
-                f"organisch/mobiel verkeer x {min(0.10, s_over * 0.02) * 100:.1f}–"
-                f"{min(0.25, s_over * 0.05) * 100:.1f}% conversie-impact"
+                f"organisch/mobiel verkeer x {lcp_low * 100:.1f}–"
+                f"{lcp_high * 100:.1f}% conversie-impact"
             ),
             signal=f"Bezoekers wachten {lcp_ms / 1000:.1f}s voor ze je producten zien{lcp_caveat} — te traag, ze haken af",
             exposure_share=exposure,
-            uplift_low=min(0.10, s_over * 0.02),
-            uplift_high=min(0.25, s_over * 0.05),
+            uplift_low=lcp_low,
+            uplift_high=lcp_high,
             confidence="medium",
             citation="DELOITTE_MS_MILLIONS",
         ), source="performance")
@@ -296,12 +330,10 @@ def _register_performance_findings(
     # — INP (proxy via TBT) —
     tbt_ms = performance.tbt_ms if performance else None
     ctx["tbt_ms"] = tbt_ms
-    if tbt_ms is not None and tbt_ms > 200:
+    inp_range = inp_uplift(tbt_ms - INP_GOOD_TBT_MS) if tbt_ms is not None else None
+    if inp_range is not None:
         exposure = organic_share * funnel.mobile_share
-        if tbt_ms > 500:
-            uplift_low, uplift_high = 0.03, 0.06
-        else:
-            uplift_low, uplift_high = 0.01, 0.03
+        uplift_low, uplift_high = inp_range
         registry.register(PricedFinding(
             finding_id="perf.inp_mobile", owning_layer=1, stage="product_view", kind="revenue",
             metric="Reageert de pagina meteen op klikken?",
@@ -341,7 +373,9 @@ def _register_performance_findings(
                 signal=f"{ad_traffic.est_post_click_bounce_pct:.0f}% vertrekt direct — {bounce_delta:.0f}% boven gezond, dat is verloren omzet",
                 fixed_low_eur=ad_traffic.est_monthly_lost_revenue_eur_low,
                 fixed_high_eur=ad_traffic.est_monthly_lost_revenue_eur_high,
-                confidence="high" if ad_traffic.data_source == "measured" else "medium",
+                # Medium even with measured traffic: the bounce-per-second curve itself
+                # is an internal estimate, and real inputs don't make it a measurement.
+                confidence="medium",
                 citation="INTERNAL_ESTIMATE",
             ), source="ad_traffic")
             ctx["bounce_registered"] = True
@@ -353,6 +387,14 @@ def _register_performance_findings(
         ctx["bounce_status"] = "not-measured"
 
     return ctx
+
+
+def _excess_bounce_pct(ad_traffic: AdTrafficImpact | None) -> float | None:
+    """Percentage points of post-click bounce above the healthy baseline — the share
+    of paid clicks the bounce model attributes to slowness."""
+    if ad_traffic is None or ad_traffic.est_post_click_bounce_pct is None:
+        return None
+    return max(0.0, ad_traffic.est_post_click_bounce_pct - ad_traffic.bounce_baseline_pct)
 
 
 def _layer1_deur(
@@ -403,25 +445,33 @@ def _layer1_deur(
             status=ctx.get("bounce_status", "not-measured"),
         ))
 
-    # — Ad-spend-verdamping — a cost (money spent, not revenue lost), computed
-    # directly from a real measured input (tracking's attribution-loss estimate)
-    # rather than an arbitrary constant, so it does not need registry pricing.
-    if ad_traffic and ad_traffic.est_wasted_ad_spend_pct is not None:
-        ad_loss = _r(min(
-            funnel.monthly_ad_spend_eur * 0.30,
-            funnel.monthly_ad_spend_eur * ad_traffic.est_wasted_ad_spend_pct / 100,
-        ))
-        signal = f"{ad_traffic.est_wasted_ad_spend_pct:.0f}% van je advertentiebudget verbrandt — de klikker ziet je winkel nooit echt"
-        ad_status: MetricStatus = "critical" if ad_traffic.est_wasted_ad_spend_pct > 30 else "warning"
+    # — Ad spend on clicks that bounce because the page is slow — a cost (money
+    # already spent), not revenue lost: the revenue side of the same bounces is
+    # adtraffic.post_click_bounce above, and cost lines never enter the leak total.
+    # Priced from the bounce model's excess over a healthy baseline, i.e. clicks we
+    # attribute to slowness. It used to be priced from tracking's attribution-loss
+    # estimate, which measures what analytics can't see, not what the page loses.
+    excess_bounce = _excess_bounce_pct(ad_traffic)
+    if excess_bounce is not None and excess_bounce > 0:
+        # The bounce model is an internal estimate that tops out at +45pp; never claim
+        # more than 30% of the ad budget as lost to slowness (same cap the old
+        # attribution-based figure had).
+        ad_loss = _r(funnel.monthly_ad_spend_eur * min(excess_bounce, _AD_SPEND_SLOWNESS_CAP_PCT) / 100)
+        signal = f"~{excess_bounce:.0f}% van de betaalde klikken haakt af door de laadtijd — daarvoor is wél betaald"
+        ad_status: MetricStatus = "critical" if excess_bounce > 20 else "warning"
+    elif excess_bounce is not None:
+        ad_loss = None
+        signal = "Betaalde bezoekers haken niet extra af door de laadtijd"
+        ad_status = "good"
     else:
         ad_loss = None
         signal = None
         ad_status = "not-measured"
     metrics.append(_cost_metric(
-        metric="Hoeveel advertentiegeld verdampt vóór de pagina laadt?",
-        what_we_measure="Het deel van je advertentiebudget waarvoor je betaalt maar geen klant terug krijgt — de klikker is weg vóór de pagina klaar is",
+        metric="Hoeveel advertentiegeld gaat naar klikken die afhaken door traagheid?",
+        what_we_measure="Het deel van je advertentiebudget dat betaalt voor bezoekers die wegklikken omdat de pagina te traag laadt",
         priority="critical",
-        calculation_note="Verdampt deel × maandelijks advertentiebudget = direct verbrand geld (kosten, geen omzetverlies)",
+        calculation_note="Extra afhakers door traagheid (boven een gezonde bounce van ~45%) × maandelijks advertentiebudget — kosten, geen omzetverlies",
         signal=signal,
         status=ad_status,
         monthly_value_eur=ad_loss,
@@ -655,15 +705,30 @@ def _register_checkout_and_cro_findings(
         if cro_finding_id(o.observation) == "cro.social_proof"
     ]
     if social_proof_pages:
+        pages = sorted(set(social_proof_pages))
+        # Priced only when an actual product page came back with no review signal of
+        # any kind (platform widget, review-app markup, rating schema, rating text).
+        # Every order passes a product page, hence exposure 1.0; the uplift is a small
+        # fraction of the cited 0-vs-5-reviews effect.
+        pdp_confirmed = _PDP_LABEL in pages
         registry.register(PricedFinding(
             finding_id="cro.social_proof", owning_layer=3, stage="product_view", kind="revenue",
             metric="Mist je winkel sociaal bewijs?",
             what_we_measure="Reviews, sterren of vertrouwenssignalen op je belangrijkste pagina's — een bewezen koopdrempel als ze ontbreken",
             priority="high", status="critical",
-            calculation_note="Spiegel Research Center meet 0-vs-5-reviews, niet 'geen widget gevonden in server-HTML' — daarom hier geen bedrag, wel een bevinding om handmatig te checken",
-            signal=f"Geen reviews, sterren of vertrouwenssignalen gedetecteerd op: {', '.join(sorted(set(social_proof_pages)))}",
-            confidence="low", verify_manually=True, citation="SPIEGEL_REVIEWS",
-            pages_affected=sorted(set(social_proof_pages)),
+            calculation_note=(
+                "Productpagina zonder reviews, sterren of beoordelingsschema → 2–5% conversie-impact op alle bestellingen"
+                if pdp_confirmed else
+                "Geen productpagina in de steekproef — daarom geen bedrag, wel een bevinding om handmatig te checken"
+            ),
+            signal=f"Geen reviews, sterren of vertrouwenssignalen gedetecteerd op: {', '.join(pages)}",
+            exposure_share=1.0 if pdp_confirmed else None,
+            uplift_low=0.02 if pdp_confirmed else None,
+            uplift_high=0.05 if pdp_confirmed else None,
+            confidence="medium" if pdp_confirmed else "low",
+            verify_manually=not pdp_confirmed,
+            citation="SPIEGEL_REVIEWS",
+            pages_affected=pages,
         ), source="cro")
 
     # Every high-severity CRO observation is surfaced as an informational count
@@ -677,6 +742,156 @@ def _register_checkout_and_cro_findings(
     ctx["high_cro_observations"] = high_cro
 
     return ctx
+
+
+# --- registration: conversion/catalog/channel findings (fase 5) --------------------
+# Each is priced only where the detection is solid and a source backs the size of the
+# effect; the rest are registered unpriced (confidence low, verify manually) so they
+# still reach the client as a finding with a concrete action — just without a euro
+# figure we couldn't defend.
+
+_LOW_UNPRICED = dict(confidence="low", verify_manually=True)
+
+
+def _register_extra_findings(
+    registry: FindingsRegistry,
+    funnel: FunnelModel,
+    shipping: ShippingHealth | None,
+    checkout: CheckoutFlow | None,
+    catalog: ShopifyCatalogHealth | None,
+    owned: OwnedChannels | None,
+    rich_results: RichResultsHealth | None,
+    product_feeds: ProductFeedHealth | None,
+) -> list[str]:
+    """Registers the findings and returns the ids that get their own row in layer 3
+    (layer 5 already shows structured data and feeds in its readiness metrics)."""
+    layer3: list[str] = []
+
+    def add(finding: PricedFinding, source: str) -> None:
+        registry.register(finding, source=source)
+        if finding.owning_layer == 3:
+            layer3.append(finding.finding_id)
+
+    if shipping and shipping.cost_info_on_pdp is False:
+        add(PricedFinding(
+            finding_id="shipping.cost_clarity", owning_layer=3, stage="add_to_cart", kind="revenue",
+            metric="Zien klanten vooraf wat verzending kost?",
+            what_we_measure="Of verzendkosten of de gratis-verzendgrens al op de productpagina staan, of pas in de checkout opduiken",
+            priority="high", status="warning",
+            calculation_note="Verzendkosten die pas in de checkout verschijnen → 1–3% conversie-impact op alle bestellingen",
+            signal="Geen verzendkosten of gratis-verzendgrens gevonden op de productpagina",
+            exposure_share=1.0, uplift_low=0.01, uplift_high=0.03,
+            confidence="medium", citation="BAYMARD_EXTRA_COSTS",
+            pages_affected=["Product page (PDP)"],
+        ), "shipping")
+
+    probed = checkout is not None and checkout.probe_status == "ok"
+    has_threshold = bool(shipping and shipping.free_shipping_threshold_eur)
+    if probed and checkout.cart_free_shipping_bar is False and has_threshold:
+        add(PricedFinding(
+            finding_id="cart.no_free_shipping_bar", owning_layer=3, stage="add_to_cart", kind="revenue",
+            metric="Ziet de klant hoe ver hij van gratis verzending af zit?",
+            what_we_measure="Een balk in de winkelmand die laat zien hoeveel er nog bij moet voor gratis verzending — stuurt op een hogere bestelwaarde",
+            priority="medium", status="warning",
+            calculation_note="Stuurt vooral op bestelwaarde; het effect hangt af van jullie drempel en assortiment, daarom geen bedrag",
+            signal=f"Gratis verzending vanaf €{shipping.free_shipping_threshold_eur:.0f}, maar geen voortgangsbalk gevonden in de winkelmand",
+            pages_affected=["Cart"], **_LOW_UNPRICED,
+        ), "checkout")
+    if probed and checkout.cart_cross_sell is False:
+        add(PricedFinding(
+            finding_id="cart.no_cross_sell", owning_layer=3, stage="add_to_cart", kind="revenue",
+            metric="Biedt de winkelmand iets aan dat erbij past?",
+            what_we_measure="Aanvullende producten in de winkelmand — een van de weinige plekken waar de bestelwaarde nog omhoog kan",
+            priority="low", status="warning",
+            calculation_note="Effect hangt af van assortiment en marge, daarom geen bedrag",
+            signal="Geen aanbevolen of aanvullende producten gevonden in de winkelmand",
+            pages_affected=["Cart"], **_LOW_UNPRICED,
+        ), "checkout")
+
+    if catalog and catalog.out_of_stock_ratio_pct is not None and catalog.out_of_stock_ratio_pct >= 20:
+        add(PricedFinding(
+            finding_id="catalog.out_of_stock", owning_layer=3, stage="product_view", kind="revenue",
+            metric="Hoeveel producten zijn niet te koop?",
+            what_we_measure="Uitverkochte producten die nog vindbaar zijn — bezoekers die erop landen kunnen niets kopen",
+            priority="medium", status="warning" if catalog.out_of_stock_ratio_pct < 40 else "critical",
+            calculation_note="Steekproef van de catalogus, niet per omzet gewogen — daarom geen bedrag",
+            signal=f"{catalog.out_of_stock_ratio_pct:.0f}% van de {catalog.product_count_sampled or 'bekeken'} producten in de steekproef is uitverkocht",
+            **_LOW_UNPRICED,
+        ), "shopify_catalog")
+    sampled = catalog.product_count_sampled if catalog else None
+    missing_img = (catalog.products_missing_images or 0) if catalog else 0
+    missing_desc = (catalog.products_missing_description or 0) if catalog else 0
+    if sampled and (missing_img + missing_desc) / sampled >= 0.05:
+        parts = []
+        if missing_img:
+            parts.append(f"{missing_img} zonder afbeelding")
+        if missing_desc:
+            parts.append(f"{missing_desc} zonder beschrijving")
+        add(PricedFinding(
+            finding_id="catalog.missing_content", owning_layer=3, stage="product_view", kind="revenue",
+            metric="Zijn alle producten compleet?",
+            what_we_measure="Producten zonder foto of beschrijving — die verkopen slecht en scoren slecht in Google Shopping",
+            priority="medium", status="warning",
+            calculation_note="Steekproef van de catalogus — geen bedrag, wel een concrete lijst om aan te vullen",
+            signal=f"Van de {sampled} producten in de steekproef: {', '.join(parts)}",
+            **_LOW_UNPRICED,
+        ), "shopify_catalog")
+
+    if owned and owned.newsletter_signup_tested is False and not owned.esp_detected:
+        add(PricedFinding(
+            finding_id="owned.no_email_capture", owning_layer=3, stage="purchase", kind="revenue",
+            metric="Bouw je een eigen klantenlijst op?",
+            what_we_measure="Een aanmelding voor nieuwsbrief of kortingscode — bezoekers die nu niet kopen, kun je later nog bereiken",
+            priority="medium", status="warning",
+            calculation_note="Opbrengst hangt af van herhaalaankopen en e-mailflows die van buitenaf niet zichtbaar zijn — geen bedrag",
+            signal="Geen nieuwsbriefaanmelding en geen e-mailplatform gevonden",
+            **_LOW_UNPRICED,
+        ), "owned_channels")
+
+    if funnel.mobile_conversion_rate and funnel.mobile_share < 1:
+        desktop_cr = (funnel.conversion_rate - funnel.mobile_share * funnel.mobile_conversion_rate) / (1 - funnel.mobile_share)
+        if desktop_cr > 0 and funnel.mobile_conversion_rate < 0.5 * desktop_cr:
+            add(PricedFinding(
+                finding_id="perf.mobile_gap", owning_layer=3, stage="session", kind="revenue",
+                metric="Converteert mobiel veel slechter dan desktop?",
+                what_we_measure="Het verschil in conversie tussen mobiel en desktop, uit jullie eigen cijfers",
+                priority="high", status="critical",
+                calculation_note="Overlapt met de laadtijd-bevinding (zelfde oorzaak) — daarom geen apart bedrag",
+                signal=(
+                    f"Mobiel converteert {funnel.mobile_conversion_rate * 100:.2f}%, desktop naar schatting "
+                    f"{desktop_cr * 100:.2f}% — minder dan de helft"
+                ),
+                **_LOW_UNPRICED,
+            ), "funnel")
+
+    if rich_results and (rich_results.has_product_schema is False or rich_results.has_aggregate_rating is False):
+        missing = [label for label, ok in (
+            ("productgegevens", rich_results.has_product_schema), ("reviewsterren", rich_results.has_aggregate_rating),
+        ) if ok is False]
+        add(PricedFinding(
+            finding_id="seo.rich_results", owning_layer=5, stage="session", kind="revenue",
+            metric="Valt je winkel op in Google?",
+            what_we_measure="Gestructureerde gegevens die prijs, voorraad en sterren direct in de zoekresultaten tonen",
+            priority="medium", status="warning",
+            calculation_note="Effect op doorklikken verschilt sterk per markt — geen bedrag",
+            signal=f"Ontbreekt in de gestructureerde gegevens: {', '.join(missing)}",
+            **_LOW_UNPRICED,
+        ), "rich_results")
+    if product_feeds and product_feeds.google_merchant_ready_estimate == "not-ready":
+        add(PricedFinding(
+            finding_id="feed.merchant_ready", owning_layer=5, stage="session", kind="revenue",
+            metric="Kun je adverteren in Google Shopping?",
+            what_we_measure="Of productgegevens (GTIN, merk, SKU) compleet genoeg zijn voor Google Shopping en AI-shopping",
+            priority="medium", status="warning",
+            calculation_note="Een kanaal dat nu niet (goed) open staat — geen bedrag",
+            signal=(
+                f"Productgegevens niet klaar voor Google Shopping; ontbreekt: {', '.join(product_feeds.missing_fields)}"
+                if product_feeds.missing_fields else "Productgegevens niet klaar voor Google Shopping"
+            ),
+            **_LOW_UNPRICED,
+        ), "product_feeds")
+
+    return layer3
 
 
 def _layer3_lekkage(
@@ -783,6 +998,10 @@ def _layer3_lekkage(
             signal="reviews/sterren gevonden op de belangrijkste pagina's",
             status="good",
         ))
+
+    for fid in ctx.get("extra_layer3", []):
+        if (finding := registry.get(fid)) is not None:  # absent when the verifier refuted it
+            metrics.append(_metric_from_finding(finding, priced))
 
     # — Pagina-specifieke bevindingen (informational rollup, no separate euro) —
     # classify each high-severity CRO observation by what actually happened to it,
@@ -1067,7 +1286,7 @@ def _detect_ceo_triggers(
             real_meaning="De store lekt bezoekers vóórdat ze converteren. Meer traffic naar een lekkende funnel versterkt het probleem.",
             tradual_pitch="Je giet water in een emmer met gaten. Wij dichten de gaten zodat elke euro ad spend meer oplevert.",
             tradual_solution="Stack Rebuild™ + Performance Layer™",
-            triggered=bool(ad_traffic and ad_traffic.est_wasted_ad_spend_pct and ad_traffic.est_wasted_ad_spend_pct > 20),
+            triggered=(_excess_bounce_pct(ad_traffic) or 0) > 20,
         ),
         CeoTriggerKpi(
             category="Conversie & Funnel",
@@ -1089,7 +1308,7 @@ def _detect_ceo_triggers(
             real_meaning="Als je funnel lekt, heb je meer klikken nodig per conversie — en elke klik kost geld.",
             tradual_pitch="Jullie CPA stijgt niet alleen omdat ads duurder worden. Fix de store en je CPA daalt — zonder je ad strategie te veranderen.",
             tradual_solution="Revenue Leak Audit™ → Stack Rebuild™",
-            triggered=bool(perf_score and perf_score < 50 and ad_traffic and (ad_traffic.est_wasted_ad_spend_pct or 0) > 15),
+            triggered=bool(perf_score and perf_score < 50 and (_excess_bounce_pct(ad_traffic) or 0) > 15),
         ),
         CeoTriggerKpi(
             category="Concurrentie & Toekomst",
@@ -1177,19 +1396,28 @@ def _detect_ceo_triggers(
             real_meaning="Bij stijgende werfkosten en een lekkende funnel daalt de klantwaarde t.o.v. acquisitiekosten. De unit-economics breken — elke klant kost relatief steeds meer.",
             tradual_pitch="Een gezond e-commercebedrijf verdient minimaal drie keer de werfkosten terug per klant. Als die verhouding daalt, kan het niet langer alleen aan de markt liggen — dan lekt de winkel zelf.",
             tradual_solution="Revenue Leak Audit™ → Performance Layer™",
-            triggered=bool(perf_score and perf_score < 50 and ad_traffic and (ad_traffic.est_wasted_ad_spend_pct or 0) > 20),
+            triggered=bool(perf_score and perf_score < 50 and (_excess_bounce_pct(ad_traffic) or 0) > 20),
         ),
     ]
 
     return triggers
 
 
+def _apply_verdicts(registry: FindingsRegistry, verdicts: dict[str, str] | None) -> None:
+    """The finding-verifier's verdicts (app/agents/verifier), applied before pricing so
+    stage ceilings are computed over what's left. refuted: the finding is gone.
+    unverifiable: kept but unpriced, via verify_manually. confirmed: unchanged."""
+    for finding_id, verdict in (verdicts or {}).items():
+        if verdict == "refuted":
+            registry.remove(finding_id)
+        elif verdict == "unverifiable" and (finding := registry.get(finding_id)) is not None:
+            finding.verify_manually = True
+
+
 def calculate_revenue_leak(
     performance: Performance | None,
     third_party: ThirdPartyScripts | None,
-    tracking: TrackingDataQuality | None,
     checkout: CheckoutFlow | None,
-    owned: OwnedChannels | None,
     cro_observations: list[CroObservation],
     rich_results: RichResultsHealth | None,
     product_feeds: ProductFeedHealth | None,
@@ -1201,7 +1429,13 @@ def calculate_revenue_leak(
     sessions_override: int | None = None,
     cr_override_pct: float | None = None,
     ad_spend_override: float | None = None,
+    mobile_share_override_pct: float | None = None,
+    mobile_cr_override_pct: float | None = None,
     cost: CostAnalysis | None = None,
+    shipping: ShippingHealth | None = None,
+    catalog: ShopifyCatalogHealth | None = None,
+    owned: OwnedChannels | None = None,
+    verdicts: dict[str, str] | None = None,
 ) -> RevenueLeakReport:
     funnel, data_conflicts = build_funnel_model(
         annual_revenue_eur, traffic,
@@ -1209,11 +1443,17 @@ def calculate_revenue_leak(
         sessions_override=sessions_override,
         cr_override_pct=cr_override_pct,
         ad_spend_override=ad_spend_override,
+        mobile_share_override_pct=mobile_share_override_pct,
+        mobile_cr_override_pct=mobile_cr_override_pct,
     )
 
     registry = FindingsRegistry()
     layer1_ctx = _register_performance_findings(registry, performance, ad_traffic, funnel)
     layer3_ctx = _register_checkout_and_cro_findings(registry, checkout, performance, cro_observations, funnel)
+    layer3_ctx["extra_layer3"] = _register_extra_findings(
+        registry, funnel, shipping, checkout, catalog, owned, rich_results, product_feeds,
+    )
+    _apply_verdicts(registry, verdicts)
     priced = price_findings(registry, funnel)
 
     layer1 = _layer1_deur(registry, priced, layer1_ctx, ad_traffic, funnel)
@@ -1235,7 +1475,7 @@ def calculate_revenue_leak(
     monthly_mid = _r((monthly_low + monthly_high) / 2)
     annual_low, annual_high, annual_mid = monthly_low * 12, monthly_high * 12, monthly_mid * 12
 
-    # Layer 1's ad-spend-evaporation metric is `kind="cost"` (money already spent, not
+    # Layer 1's ad-spend-on-bounced-clicks metric is `kind="cost"` (money already spent, not
     # revenue lost) and is excluded from layer1.est_monthly_loss_eur by _finalize_layer's
     # kind filter — fold it into the cost line here instead of dropping it silently.
     layer1_ad_cost = sum(m.monthly_loss_eur or 0 for m in layer1.metrics if m.kind == "cost")
@@ -1275,6 +1515,8 @@ def calculate_revenue_leak(
                 ),
             ))
 
+    findings = [_finding_out(f, priced) for f in registry.all()]
+
     ceo_triggers = _detect_ceo_triggers(
         performance, ad_traffic, third_party, checkout, rich_results, product_feeds
     )
@@ -1299,6 +1541,8 @@ def calculate_revenue_leak(
         data_conflicts=data_conflicts,
         model_warnings=registry.warnings,
         model_version=_MODEL_VERSION,
+        findings=findings,
+        actions=build_action_list(findings),
     )
 
 

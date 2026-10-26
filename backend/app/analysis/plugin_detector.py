@@ -1,6 +1,6 @@
 from bs4 import BeautifulSoup
 
-from app.analysis.plugin_costs import load_known_plugins
+from app.analysis.plugin_costs import load_known_plugins, usd_list_price_to_eur
 
 
 def detect_plugins(html: str, headers: dict[str, str], platform: str) -> list[dict]:
@@ -70,7 +70,7 @@ def detect_plugins(html: str, headers: dict[str, str], platform: str) -> list[di
                     break
 
         if found_method and slug not in detected:
-            avg_cost = (plugin["monthly_cost_low"] + plugin["monthly_cost_high"]) / 2
+            avg_cost = usd_list_price_to_eur((plugin["monthly_cost_low"] + plugin["monthly_cost_high"]) / 2)
             detected[slug] = {
                 "name": plugin["name"],
                 "slug": slug,

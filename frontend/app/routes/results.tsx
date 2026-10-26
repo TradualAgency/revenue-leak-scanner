@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router";
 import { getReportStatus, getReportSummary } from "~/lib/api";
-import type { ReportStatusResponse, ReportSummaryResponse } from "~/lib/types";
+import type { ClientAssumption, ReportStatusResponse, ReportSummaryResponse } from "~/lib/types";
+import { ACTION_EN, ASSUMPTION_EN, EFFORT_EN, FINDING_EN, SOURCE_EN, conflictMessageEn } from "~/lib/scanCopy";
 import PerformanceGauge from "~/components/PerformanceGauge";
 import Header from "~/components/Header";
 import Footer from "~/components/Footer";
+import { BOOK_A_CALL_URL } from "~/lib/links";
 
 export function meta() {
   return [
@@ -23,9 +25,22 @@ const statusMessages = [
   "Almost done...",
 ];
 
-function fmt(n: number | null | undefined, prefix = "$"): string {
+function fmt(n: number | null | undefined): string {
   if (n == null) return "—";
-  return `${prefix}${Math.round(Number(n)).toLocaleString()}`;
+  return `€${Math.round(Number(n)).toLocaleString("en-GB")}`;
+}
+
+/** Ranges are estimates — rounded to €100 like every total in the paid report. */
+function fmtRange(low: number | null | undefined, high: number | null | undefined): string {
+  if (low == null || high == null) return "—";
+  const r = (n: number) => Math.round(n / 100) * 100;
+  return Math.abs(high - low) < Math.max(50, low * 0.05) ? fmt(r((low + high) / 2)) : `${fmt(r(low))} – ${fmt(r(high))}`;
+}
+
+function fmtAssumption(a: ClientAssumption): string {
+  if (a.unit === "eur") return fmt(a.value);
+  if (a.unit === "pct") return `${a.value.toLocaleString("en-GB", { maximumFractionDigits: 2 })}%`;
+  return Math.round(a.value).toLocaleString("en-GB");
 }
 
 function CheckIcon({ className = "w-4 h-4 text-[#c5a96f] flex-shrink-0" }: { className?: string }) {
@@ -208,7 +223,7 @@ export default function Results() {
                       <div className="text-2xl font-semibold text-[#0a2f23]">
                         {(status.avg_load_time_ms / 1000).toFixed(1)}s
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">Avg Load Time</div>
+                      <div className="text-xs text-gray-500 mt-1">Mobile Load Time</div>
                     </div>
                   )}
                 </div>
@@ -250,13 +265,18 @@ export default function Results() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
                   <div className="text-3xl font-semibold text-[#EF4444]">
-                    {summary.estimated_monthly_loss_min != null && summary.estimated_monthly_loss_max != null
-                      ? `${fmt(summary.estimated_monthly_loss_min)} – ${fmt(summary.estimated_monthly_loss_max)}`
+                    {summary.model_version
+                      ? fmtRange(summary.estimated_monthly_loss_low, summary.estimated_monthly_loss_high)
+                      : summary.legacy_monthly_loss_estimate != null
+                      ? `≈ ${fmt(summary.legacy_monthly_loss_estimate)}`
                       : "—"}
                   </div>
                   <div className="text-xs text-gray-500 mt-2 font-medium uppercase tracking-wider">
-                    Est. Monthly Revenue Loss
+                    Est. Monthly Revenue Leak
                   </div>
+                  {!summary.model_version && summary.legacy_monthly_loss_estimate != null && (
+                    <div className="text-[11px] text-gray-400 mt-1">indication — earlier calculation method</div>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
@@ -270,7 +290,7 @@ export default function Results() {
 
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
                   <div className="text-3xl font-semibold text-[#c5a96f]">
-                    {fmt(summary.total_plugin_cost_monthly)}
+                    ±{fmt(summary.total_plugin_cost_monthly)}
                     <span className="text-sm font-medium text-gray-400">/mo</span>
                   </div>
                   <div className="text-xs text-gray-500 mt-2 font-medium uppercase tracking-wider">
@@ -279,49 +299,48 @@ export default function Results() {
                 </div>
               </div>
 
-              {/* Section 2: Speed & Revenue Impact */}
-              {(summary.avg_load_time_ms != null || summary.blended_loss_rate != null) && (
+              {summary.data_conflicts.length > 0 && (
+                <div className="border border-amber-200 bg-amber-50 rounded-2xl p-4 text-sm text-amber-800 space-y-1">
+                  {summary.data_conflicts.map((c, i) => (
+                    <p key={i}>{conflictMessageEn(c)}</p>
+                  ))}
+                </div>
+              )}
+
+              {/* Section 2: Where the money leaks */}
+              {summary.findings.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-lg font-semibold text-gray-700 mb-5">Speed &amp; Revenue Impact</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {summary.avg_load_time_ms != null && (
-                      <div>
-                        <div className="text-3xl font-semibold text-[#0a2f23]">
-                          {(summary.avg_load_time_ms / 1000).toFixed(2)}
-                          <span className="text-lg font-medium text-gray-400 ml-1">s</span>
-                        </div>
-                        <div className="text-sm text-gray-500 mt-1">Average Load Time</div>
-                        {summary.excess_load_time != null && summary.excess_load_time > 0 && (
-                          <div className="text-xs text-[#EF4444] mt-1 font-medium">
-                            +{summary.excess_load_time.toFixed(1)}s above benchmark
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {summary.blended_loss_rate != null && (
-                      <div>
-                        <div className="text-3xl font-semibold text-[#EF4444]">
-                          {(summary.blended_loss_rate * 100).toFixed(1)}
-                          <span className="text-lg font-medium text-gray-400 ml-0.5">%</span>
-                        </div>
-                        <div className="text-sm text-gray-500 mt-1">Conversion Loss from Load Time</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          of visitors drop off before converting
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {summary.avg_load_time_ms != null && (
-                    <p className="mt-5 text-sm text-gray-500 border-t border-gray-100 pt-4">
-                      Every second above 2.5s (Google's "good" loading threshold) costs conversions. Your store loads in{" "}
-                      <span className="font-semibold text-gray-700">
-                        {(summary.avg_load_time_ms / 1000).toFixed(1)}s
-                      </span>
-                      {summary.excess_load_time != null && summary.excess_load_time > 0
-                        ? ` — that's ${summary.excess_load_time.toFixed(1)}s too slow.`
-                        : "."}
+                  <h2 className="text-lg font-semibold text-gray-700 mb-1">Where Your Revenue Leaks</h2>
+                  {summary.lcp_ms != null && (
+                    <p className="text-sm text-gray-500 mb-4">
+                      Your main content shows up after{" "}
+                      <span className="font-semibold text-gray-700">{(summary.lcp_ms / 1000).toFixed(1)}s</span> on mobile
+                      {summary.lcp_ms > 2500 ? " — Google's threshold for a good experience is 2.5s." : ", within Google's 2.5s threshold."}
                     </p>
                   )}
+                  <ul className="divide-y divide-gray-100">
+                    {summary.findings.map((f) => {
+                      const copy = FINDING_EN[f.finding_id];
+                      return (
+                        <li key={f.finding_id} className="py-3 flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{copy?.title ?? f.metric}</p>
+                            {copy?.body && <p className="text-xs text-gray-500 mt-0.5">{copy.body}</p>}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            {f.priced ? (
+                              <>
+                                <p className="text-sm font-bold text-[#EF4444] tabular-nums">{fmtRange(f.monthly_low, f.monthly_high)}/mo</p>
+                                <p className="text-[11px] text-gray-400">{f.confidence} confidence</p>
+                              </>
+                            ) : (
+                              <p className="text-[11px] text-gray-400 italic">verify by hand</p>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               )}
 
@@ -348,7 +367,7 @@ export default function Results() {
                             <td className="py-3 pr-4 text-gray-500 capitalize">{p.platform}</td>
                             <td className="py-3 pr-4 text-right text-gray-700">
                               {p.estimated_monthly_cost != null && Number(p.estimated_monthly_cost) > 0
-                                ? fmt(p.estimated_monthly_cost)
+                                ? `±${fmt(p.estimated_monthly_cost)}`
                                 : <span className="text-gray-400">free</span>}
                             </td>
                             <td className="py-3 text-right">
@@ -362,7 +381,7 @@ export default function Results() {
                           <tr className="border-t-2 border-gray-200">
                             <td className="pt-3 pr-4 font-semibold text-gray-700" colSpan={2}>Total</td>
                             <td className="pt-3 pr-4 text-right font-bold text-[#c5a96f]" colSpan={2}>
-                              {fmt(summary.total_plugin_cost_monthly)}/mo
+                              ±{fmt(summary.total_plugin_cost_monthly)}/mo
                             </td>
                           </tr>
                         </tfoot>
@@ -398,18 +417,53 @@ export default function Results() {
                 </div>
               )}
 
-              {/* Section 5: Quick Wins */}
-              {summary.quick_wins && summary.quick_wins.length > 0 && (
+              {/* Section 5: Where to start */}
+              {summary.actions.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                  <h2 className="text-lg font-semibold text-gray-700 mb-4">Quick Wins</h2>
-                  <ul className="flex flex-col gap-3">
-                    {summary.quick_wins.map((win) => (
-                      <li key={win} className="flex items-start gap-3 text-sm text-gray-700">
-                        <CheckIcon />
-                        <span>{win}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <h2 className="text-lg font-semibold text-gray-700 mb-4">Where to Start</h2>
+                  <ol className="flex flex-col gap-4">
+                    {summary.actions.map((a, i) => {
+                      const copy = ACTION_EN[a.action_key];
+                      return (
+                        <li key={a.action_key} className="flex items-start gap-3 text-sm">
+                          <span className="text-gray-400 font-semibold tabular-nums w-4">{i + 1}</span>
+                          <div className="flex-1">
+                            <div className="flex flex-wrap justify-between gap-x-4">
+                              <p className="font-medium text-gray-800">{copy?.title ?? a.title_nl}</p>
+                              {a.priced && a.monthly_high ? (
+                                <p className="font-semibold text-[#EF4444] tabular-nums">{fmtRange(a.monthly_low, a.monthly_high)}/mo</p>
+                              ) : null}
+                            </div>
+                            {copy?.body && <p className="text-xs text-gray-500 mt-0.5">{copy.body}</p>}
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              Effort: {EFFORT_EN[a.effort]} · {a.effort_days_low}–{a.effort_days_high} days · re-measure after {a.remeasure_after_days} days
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+
+              {/* How the numbers were built */}
+              {summary.assumptions.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                  <h2 className="text-lg font-semibold text-gray-700 mb-1">How We Calculated This</h2>
+                  <p className="text-xs text-gray-500 mb-4">
+                    Every amount above is a share of the monthly revenue below. Numbers marked "industry average" are assumptions — your own figures make the estimate sharper.
+                  </p>
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-gray-50">
+                      {summary.assumptions.map((a) => (
+                        <tr key={a.key}>
+                          <td className="py-2 pr-4 text-gray-600">{ASSUMPTION_EN[a.key] ?? a.label_nl}</td>
+                          <td className="py-2 pr-4 text-right font-medium text-gray-800 tabular-nums">{fmtAssumption(a)}</td>
+                          <td className="py-2 text-right text-xs text-gray-400">{SOURCE_EN[a.source]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
@@ -449,7 +503,7 @@ export default function Results() {
                   </div>
 
                   <a
-                    href="mailto:info@tradual.com"
+                    href={BOOK_A_CALL_URL}
                     className="inline-block text-center bg-[#c5a96f] hover:bg-[#b8975e] text-white font-medium px-8 py-4 rounded-xl transition-colors shadow-lg w-full sm:w-auto tracking-wide"
                   >
                     Book Your Free Strategy Call →

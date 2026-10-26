@@ -89,3 +89,10 @@ export function severityByShare(
   if (share >= warnAt) return "warning";
   return "good";
 }
+
+/** Heading for a DataConflict notice. The ratio only means something for the two
+ *  euro-vs-euro conflicts; the mobile-CR one is a plausibility check. */
+export function conflictTitle(c: { kind: string; ratio: number }): string {
+  if (c.kind === "mobile_cr_vs_overall") return "Tegenstrijdige invoer — mobiele conversie";
+  return `Tegenstrijdige invoer — ${c.ratio.toFixed(1)}x verschil`;
+}

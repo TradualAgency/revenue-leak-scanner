@@ -127,9 +127,41 @@ def _detect_payment_methods(html: str) -> list[str]:
     return found
 
 
+# Shopify renders the *container* for accelerated checkout server-side whenever at
+# least one wallet is enabled (`additional_checkout_buttons` in Liquid); the buttons
+# inside it are drawn client-side, which is why the named markers above usually miss.
+# The container says "express checkout is on" without saying which wallet.
+_SHOPIFY_EXPRESS_CONTAINERS = (
+    "shopify-accelerated-checkout",
+    'data-shopify="dynamic-checkout-cart"',
+    "additional-checkout-buttons",
+)
+
+
+_FREE_SHIPPING_BAR_MARKERS = (
+    "free-shipping", "free_shipping", "freeshipping", "shipping-bar", "shipping-progress",
+    "gratis verzending", "free shipping",
+)
+_CROSS_SELL_MARKERS = (
+    "cart-upsell", "cross-sell", "crosssell", "cart-recommendations", "complementary",
+    "you may also like", "misschien ook", "vaak samen gekocht", "frequently bought",
+)
+
+
+def _detect_cart_extras(html: str) -> tuple[bool, bool]:
+    lower = html.lower()
+    return (
+        any(m in lower for m in _FREE_SHIPPING_BAR_MARKERS),
+        any(m in lower for m in _CROSS_SELL_MARKERS),
+    )
+
+
 def _detect_express_checkout(html: str) -> list[str]:
     lower = html.lower()
-    return [name for name, markers in _EXPRESS_CHECKOUT_MARKERS.items() if any(m in lower for m in markers)]
+    named = [name for name, markers in _EXPRESS_CHECKOUT_MARKERS.items() if any(m in lower for m in markers)]
+    if not named and any(marker in lower for marker in _SHOPIFY_EXPRESS_CONTAINERS):
+        return ["Express checkout (Shopify, wallet onbekend)"]
+    return named
 
 
 async def _get_first_available_variant(session: aiohttp.ClientSession, base: str) -> int | None:
@@ -167,6 +199,8 @@ async def probe_checkout(store_url: str) -> CheckoutFlow:
     redirects: int = 0
     checkout_time_s: float | None = None
     added_to_cart = False
+    cart_free_shipping_bar: bool | None = None
+    cart_cross_sell: bool | None = None
 
     try:
         connector = aiohttp.TCPConnector(limit=2)
@@ -198,6 +232,7 @@ async def probe_checkout(store_url: str) -> CheckoutFlow:
                     cart_html = await resp.text(errors="replace")
                     cart_redirects = len(resp.history)
                     express_checkout = _detect_express_checkout(cart_html)
+                    cart_free_shipping_bar, cart_cross_sell = _detect_cart_extras(cart_html)
                     cart_payment = _detect_payment_methods(cart_html)
                     if cart_payment:
                         payment_methods = cart_payment
@@ -269,6 +304,8 @@ async def probe_checkout(store_url: str) -> CheckoutFlow:
         total_checkout_time_seconds=checkout_time_s,
         observed_friction=friction,
         post_purchase_observations=None,
+        cart_free_shipping_bar=cart_free_shipping_bar,
+        cart_cross_sell=cart_cross_sell,
         notes=(
             "Outside-only checkout probe: product daadwerkelijk in de winkelmand gelegd via "
             "de Shopify cart-API (mobiele user-agent) en doorgestroomd naar checkout. "

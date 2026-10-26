@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_operator_key
+from app.full_audit.client_report import build_client_report
 from app.full_audit.models import FullAudit
 from app.full_audit.overview import FullAuditListResponse, list_full_audits
 from app.full_audit.schemas import (
+    ClientAuditReport,
     FullAuditCreateResponse,
     FullAuditData,
     FullAuditRequest,
@@ -41,6 +43,8 @@ async def create_full_audit(
         monthly_sessions=body.monthly_sessions,
         conversion_rate_pct=body.conversion_rate_pct,
         monthly_ad_spend_eur=body.monthly_ad_spend_eur,
+        mobile_share_pct=body.mobile_share_pct,
+        mobile_conversion_rate_pct=body.mobile_conversion_rate_pct,
         status="queued",
     )
     db.add(audit)
@@ -63,9 +67,8 @@ async def get_full_audit_list(
     q: str | None = Query(None, max_length=200),
     db: AsyncSession = Depends(get_db),
 ) -> FullAuditListResponse:
-    """Every stored audit, newest first. Operator-only, unlike the two `/{audit_id}`
-    reads below — those stay reachable by anyone holding the audit link, but a list of
-    every prospect we have ever scanned is not shareable data."""
+    """Every stored audit, newest first. Operator-only — a list of every prospect we
+    have ever scanned is not shareable data."""
     return await list_full_audits(db, limit=limit, offset=offset, q=q)
 
 
@@ -88,11 +91,13 @@ async def get_full_audit_status(
     )
 
 
-@router.get("/{audit_id}", response_model=FullAuditResponse)
-async def get_full_audit(
+@router.get("/{audit_id}/report", response_model=ClientAuditReport)
+async def get_client_audit_report(
     audit_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> FullAuditResponse:
+) -> ClientAuditReport:
+    """The prospect-facing projection (see client_report.py). Public by design: this is
+    what the shareable `/revenue-leak/{id}` link reads."""
     result = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))
     audit = result.scalar_one_or_none()
     if not audit:
@@ -101,11 +106,25 @@ async def get_full_audit(
     data: FullAuditData | None = None
     if audit.audit_data and audit.status == "ready_for_review":
         data = FullAuditData.model_validate(audit.audit_data)
-        # The Sanity export embeds a page password for the operator-only CMS import
-        # flow — it must never ride along on this endpoint, which is reachable by
-        # anyone holding the audit link (the same shareable-link model used for the
-        # prospect-facing revenue-leak report). Fetch it via the dedicated,
-        # operator-key-gated endpoint below instead.
+    return build_client_report(audit, data)
+
+
+@router.get("/{audit_id}", response_model=FullAuditResponse, dependencies=[Depends(require_operator_key)])
+async def get_full_audit(
+    audit_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> FullAuditResponse:
+    """The full operator working file. Clients read `/{audit_id}/report` instead."""
+    result = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))
+    audit = result.scalar_one_or_none()
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+
+    data: FullAuditData | None = None
+    if audit.audit_data and audit.status == "ready_for_review":
+        data = FullAuditData.model_validate(audit.audit_data)
+        # The Sanity export (with its page password) has its own endpoint below; keep
+        # this payload the same shape it has always been for the dashboard.
         data.sanity_export = None
 
     return FullAuditResponse(

@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import re
-from urllib.parse import urlparse
 
+from app.domains import registrable_domain
 from app.full_audit.schemas import DnsEmailHealth
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,8 @@ async def _resolve(domain: str, rdtype: str) -> list[str]:
 
 async def analyze_dns_email(store_url: str) -> DnsEmailHealth:
     try:
-        domain = urlparse(store_url).hostname or ""
+        # Mail records live on the apex: `www.shop.nl` has no SPF/DMARC/MX of its own.
+        domain = await registrable_domain(store_url)
         if not domain:
             return DnsEmailHealth()
 

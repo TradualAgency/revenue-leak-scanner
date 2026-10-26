@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from app.analysis.scraper import set_cookie_text
 from app.full_audit.schemas import ServerSideTracking
 
 logger = logging.getLogger(__name__)
@@ -52,12 +53,7 @@ async def analyze_server_side_tracking(store_url: str, pages: list[dict]) -> Ser
             pass
 
         # Meta CAPI — server-set _fbc/_fbp cookies indicate CAPI
-        all_headers: dict[str, str] = {}
-        for page in pages:
-            for k, v in (page.get("headers", {}) or {}).items():
-                all_headers[k.lower()] = v
-
-        set_cookie = all_headers.get("set-cookie", "")
+        set_cookie = "\n".join(set_cookie_text(page) for page in pages)
         if "_fbc=" in set_cookie or "_fbp=" in set_cookie:
             meta_capi_status = "detected"
         elif "fbq(" in html_combined or "fbevents" in html_combined:

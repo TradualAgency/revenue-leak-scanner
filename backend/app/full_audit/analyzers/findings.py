@@ -112,6 +112,9 @@ class FindingsRegistry:
     def get(self, finding_id: str) -> PricedFinding | None:
         return self._by_id.get(finding_id)
 
+    def remove(self, finding_id: str) -> None:
+        self._by_id.pop(finding_id, None)
+
     def all(self) -> list[PricedFinding]:
         return list(self._by_id.values())
 

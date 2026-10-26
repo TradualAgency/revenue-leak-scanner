@@ -6,7 +6,7 @@ Geen lijst losse observaties. Een **roadmap** in 2-4 fases die:
 
 1. Begint met de hoogste-impact, laagste-friction wins (Foundation Fix).
 2. Bouwt logisch op: wat moet eerst draaien voordat de volgende fase zinvol is?
-3. Maakt expliciet welke € of % uplift elke fase ontsluit (gebruik `revenue_leak` en `ad_traffic_impact` als basis).
+3. Maakt expliciet welke gemeten lekken elke fase dicht, via `finding_ids` (zie hieronder). Bedragen reken je niet zelf uit.
 4. Levert een North Star metric op die het hele plan stuurt (bv. "Mobile CR" of "ROAS" of "Maandelijkse omzet uit owned channels").
 
 ## Faseringslogica
@@ -22,10 +22,10 @@ Skip Fase 3 als de store nog niet klaar is voor schaal. Voeg een Fase 4 toe als 
 ## Datainterpretatie
 
 - `null` = niet gemeten, niet "afwezig". Schrijf geen acties op basis van `null` data.
-- Gebruik concrete getallen uit de audit: LCP-seconden, blocking-ms, attribution loss %, € lekkage uit `revenue_leak.total_monthly_loss_eur` en per laag.
+- Gebruik concrete meetwaarden uit de audit (laadtijd in seconden, blocking-ms, attribution loss %), maar geen eurobedragen: die voegt het rekenmodel toe.
 - Quick wins = acties die binnen 30 dagen meetbaar resultaat opleveren EN minder dan 2 werkdagen kosten.
 - Top priorities = de 3-5 belangrijkste acties uit het hele plan, ongeacht fase.
-- Per fase: `est_monthly_revenue_impact_eur` = jouw beste inschatting van de extra € per maand die deze fase ontsluit. Mag `null` als niet onderbouwd te schatten. Som ≈ `revenue_leak.total_monthly_loss_eur` als plan compleet is.
+- Per fase: `finding_ids` = de `finding_id`'s uit `roadmap_findings` die deze fase oplost. Gebruik uitsluitend id's die letterlijk in `roadmap_findings` staan, en koppel elke id aan hooguit één fase (de fase waarin het probleem echt wordt opgelost). Het rekenmodel telt daar de bedragen bij op — schrijf zelf **geen** eurobedragen, niet in dit veld en niet in de tekstvelden.
 - **Checkout probe onbereikbaar**: Als `checkout_flow.probe_status == "unreachable"` of `checkout_flow == null`, schrijf dan **geen** acties over checkout-stappen, betaalmethode-volgorde, address-form-velden of guest-checkout. Je mag maximaal één zin schrijven dat de checkout niet bereikbaar was voor outside-only probing.
 - **Proportionaliteit**: Gebruik `business_context.estimated_monthly_revenue_eur` als ankerpunt. Investeervolumes, implementatietijdlijnen en prioriteiten moeten realistisch zijn voor de schaal van de store. Een €5k/mnd store doet geen 6-maands headless-migratie als eerste stap.
 
@@ -57,7 +57,7 @@ Reageer uitsluitend met geldige JSON (geen markdown, geen uitleg erbuiten), exac
       "objective": "<wat lossen we op in deze fase, in 1 zin>",
       "actions": ["<concrete actie 1>", "<concrete actie 2>"],
       "expected_outcome": "<meetbare uitkomst — bv. 'LCP onder 2.5s, attribution loss <10%'>",
-      "est_monthly_revenue_impact_eur": <getal of null>,
+      "finding_ids": ["<finding_id uit roadmap_findings>"],
       "dependencies": []
     }
   ],

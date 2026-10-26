@@ -9,8 +9,8 @@ class LeadCreate(BaseModel):
     email: EmailStr
     platform: str
     store_url: str
-    monthly_revenue: Decimal
-    monthly_traffic: int
+    monthly_revenue: Decimal  # EUR per month
+    monthly_traffic: int  # visitors per month; with revenue, fixes the funnel's CR
 
     @field_validator("platform")
     @classmethod

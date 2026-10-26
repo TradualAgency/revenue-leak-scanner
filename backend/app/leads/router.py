@@ -19,7 +19,14 @@ async def create_lead(
     report = await create_report_for_lead(db, lead)
     await db.commit()
 
-    background_tasks.add_task(run_analysis, report_id=report.id, store_url=str(body.store_url), platform=body.platform, monthly_revenue=body.monthly_revenue)
+    background_tasks.add_task(
+        run_analysis,
+        report_id=report.id,
+        store_url=str(body.store_url),
+        platform=body.platform,
+        monthly_revenue=body.monthly_revenue,
+        monthly_traffic=body.monthly_traffic,
+    )
 
     return LeadCreateResponse(
         lead_id=lead.id,

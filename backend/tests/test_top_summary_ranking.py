@@ -38,9 +38,7 @@ def test_priced_lcp_outranks_unpriced_dmarc():
     revenue_leak = calculate_revenue_leak(
         performance=performance,
         third_party=None,
-        tracking=None,
         checkout=None,
-        owned=None,
         cro_observations=[],
         rich_results=None,
         product_feeds=None,

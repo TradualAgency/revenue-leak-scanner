@@ -12,6 +12,7 @@ One normalizer, used at every ingress point.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from urllib.parse import urlparse
 
@@ -67,3 +68,27 @@ def normalize_competitor_input(raw: str) -> str | None:
 def same_registrable(a: str, b: str) -> bool:
     """True when two inputs point at the same host once normalized."""
     return bool(a) and bool(b) and extract_domain(a).rstrip(".") == extract_domain(b).rstrip(".")
+
+
+async def registrable_domain(url_or_host: str) -> str:
+    """The DNS zone apex a host lives under — `https://www.shop.nl/x` -> `shop.nl`,
+    `shop.brand.co.uk` -> `brand.co.uk`.
+
+    Mail records (SPF, DMARC, MX, DKIM) live on the apex, not on `www.`: querying them on
+    the storefront host reports "missing" for almost every store. Asks DNS for the zone
+    (SOA) instead of carrying a public-suffix list; falls back to `extract_domain` when
+    DNS doesn't answer or returns something that isn't a suffix of the host.
+    """
+    host = extract_domain(url_or_host).rstrip(".")
+    if not host:
+        return host
+    try:
+        import dns.resolver
+
+        zone = await asyncio.to_thread(dns.resolver.zone_for_name, host, lifetime=5.0)
+        apex = zone.to_text().rstrip(".").lower()
+    except Exception:
+        return host
+    if "." in apex and (host == apex or host.endswith(f".{apex}")):
+        return apex
+    return host

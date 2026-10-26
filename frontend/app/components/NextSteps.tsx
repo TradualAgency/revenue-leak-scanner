@@ -1,5 +1,5 @@
 import SectionLabel from "~/components/report/SectionLabel";
-import type { CompetitorBenchmarkData, RevenueLeakReport } from "~/lib/types";
+import type { CompetitorBenchmarkData, RevenueLeakReportBase } from "~/lib/types";
 
 // Shared between the revenue-leak report and the marktvergelijking (competitor
 // benchmark) page — both are prospect-facing sales artifacts that end on the same
@@ -45,7 +45,7 @@ const NEXT_STEPS: { key: StepKey; step: number; name: string; description: strin
 // Every layer's `leads_to` already points at one of these products (see backend
 // revenue_leak.py) — this just decides which of steps 2-4 to visually emphasize based
 // on where this specific audit found the most signal.
-export function relevantStepsFromRevenueLeak(data: RevenueLeakReport): Set<StepKey> {
+export function relevantStepsFromRevenueLeak(data: RevenueLeakReportBase): Set<StepKey> {
   const relevant = new Set<StepKey>();
   const directHigh = data.total_monthly_loss_eur_high ?? data.total_monthly_loss_eur ?? 0;
   if (directHigh > 0) relevant.add("rebuild");

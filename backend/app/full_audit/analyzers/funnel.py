@@ -115,6 +115,8 @@ def build_funnel_model(
     sessions_override: int | None = None,
     cr_override_pct: float | None = None,
     ad_spend_override: float | None = None,
+    mobile_share_override_pct: float | None = None,
+    mobile_cr_override_pct: float | None = None,
 ) -> tuple[FunnelModel, list[DataConflict]]:
     conflicts: list[DataConflict] = []
     operator_monthly_revenue = (annual_revenue_eur / 12) if annual_revenue_eur else None
@@ -221,17 +223,59 @@ def build_funnel_model(
     else:
         paid_share = PAID_SHARE_DEFAULT
 
-    has_real_signal = any([aov_override, sessions_override, cr_override_pct, ad_spend_override, traffic is not None])
-    data_source = "measured" if has_real_signal else "heuristic"
+    # --- mobile share: operator > MOBILE_SHARE_DEFAULT (no citable source) ---
+    if mobile_share_override_pct is not None and 0 < mobile_share_override_pct <= 100:
+        mobile_share = mobile_share_override_pct / 100
+        mobile_share_source = "operator"
+    else:
+        mobile_share = MOBILE_SHARE_DEFAULT
+        mobile_share_source = "benchmark"
+
+    # --- mobile CR: context only. Overall CR is the traffic-weighted mix of mobile and
+    # desktop CR, so a mobile CR that would need a negative desktop CR (or one above the
+    # 30% sanity clamp) to add up means one of the operator's numbers is wrong. ---
+    mobile_cr = (mobile_cr_override_pct / 100) if mobile_cr_override_pct else None
+    if mobile_cr is not None and mobile_share < 1:
+        implied_desktop_cr = (cr - mobile_share * mobile_cr) / (1 - mobile_share)
+        if implied_desktop_cr < 0 or implied_desktop_cr > 0.30:
+            conflicts.append(DataConflict(
+                kind="mobile_cr_vs_overall",
+                operator_value_eur=0.0,
+                model_value_eur=0.0,
+                ratio=(mobile_cr / cr) if cr > 0 else 0.0,
+                severity="warning",
+                message_nl=(
+                    f"De opgegeven mobiele conversie ({mobile_cr * 100:.2f}%) past niet bij de "
+                    f"totale conversie ({cr * 100:.2f}%) en een mobiel aandeel van "
+                    f"{mobile_share * 100:.0f}%: dan zou desktop {implied_desktop_cr * 100:.2f}% "
+                    "moeten converteren. Controleer deze drie cijfers."
+                ),
+            ))
+
+    # Provenance is judged on the two inputs that decide the revenue figure every euro
+    # is scaled by. One real input (say, only AOV) used to label the whole report
+    # "measured" while sessions and CR were still benchmarks.
+    real_sessions = sessions_source in ("operator", "seranking")
+    real_cr = cr_source in ("operator", "derived")
+    any_real_input = any([
+        aov_override, sessions_override, cr_override_pct, ad_spend_override,
+        traffic is not None, annual_revenue_eur, mobile_share_source == "operator",
+    ])
+    if real_sessions and real_cr:
+        data_source = "measured"
+    elif any_real_input:
+        data_source = "partial"
+    else:
+        data_source = "heuristic"
 
     stages = _funnel_stages(sessions, cr, monthly_purchases)
 
-    if data_source == "measured":
+    if data_source != "heuristic":
         methodology_note = (
             f"Omzet berekend uit funnel: {sessions:,.0f} sessies/mnd x {cr * 100:.2f}% "
             f"CVR x €{aov:.0f} AOV = €{monthly_revenue_eur:,.0f}/mnd. "
             f"(sessies: {sessions_source}, CVR: {cr_source}, AOV: {aov_source}, "
-            f"ad spend: {ad_spend_source})."
+            f"ad spend: {ad_spend_source}, mobiel aandeel: {mobile_share_source})."
         )
     else:
         methodology_note = (
@@ -248,7 +292,7 @@ def build_funnel_model(
         monthly_revenue_eur=monthly_revenue_eur,
         monthly_purchases=monthly_purchases,
         monthly_ad_spend_eur=ad_spend,
-        mobile_share=MOBILE_SHARE_DEFAULT,
+        mobile_share=mobile_share,
         paid_share=paid_share,
         stages=stages,
         calibration_factor=_calibrate_stage_rates(cr)[1],
@@ -259,6 +303,8 @@ def build_funnel_model(
         operator_monthly_revenue_eur=operator_monthly_revenue,
         data_source=data_source,
         methodology_note=methodology_note,
+        mobile_share_source=mobile_share_source,
+        mobile_conversion_rate=mobile_cr,
     )
     return funnel, conflicts
 

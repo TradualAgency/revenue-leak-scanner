@@ -93,7 +93,7 @@ export default function LeadCaptureForm() {
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="monthly_revenue" className="text-sm font-medium text-gray-600">
-            Monthly Revenue (USD)
+            Monthly Revenue (EUR)
           </label>
           <input
             id="monthly_revenue"

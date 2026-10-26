@@ -16,10 +16,14 @@ _WOOCOMMERCE_SIGNALS = [
     (r"wc-ajax", "AJAX endpoint: wc-ajax"),
     (r"wp-content/plugins/woocommerce", "plugin path: woocommerce"),
 ]
+# `_rate` matches case-insensitively; `(?-i:...)` opts a signal back out. A bare
+# `mage/` used to hit every `image/` in the page (so most non-Shopify, non-Woo sites
+# came out "Magento (probable)"), and a lowercase "magento" in body copy is not the
+# `Magento` JS global.
 _MAGENTO_SIGNALS = [
-    (r"Magento", "inline global: Magento"),
+    (r"(?-i:Magento)", "inline global: Magento"),
     (r"/static/version\d+/", "asset path: /static/versionN/"),
-    (r"mage/", "RequireJS: mage/"),
+    (r"(?<![\w-])mage/", "RequireJS: mage/"),
 ]
 _NEXTJS_SIGNALS = [
     (r"__NEXT_DATA__", "inline JSON: __NEXT_DATA__"),

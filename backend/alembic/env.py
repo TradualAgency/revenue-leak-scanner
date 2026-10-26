@@ -10,6 +10,7 @@ from app.database import Base
 
 # Import all models so Alembic can detect them
 from app.competitor_benchmark.models import CompetitorBenchmarkRun, CompetitorSnapshot  # noqa: F401
+from app.fix_agents.models import FixAgentRun  # noqa: F401
 from app.full_audit.models import FullAudit  # noqa: F401
 from app.leads.models import Lead  # noqa: F401
 from app.reports.models import DetectedPlugin, KnownPlugin, Report  # noqa: F401

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import ssl
@@ -7,6 +8,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from app.analysis.scraper import set_cookie_text
 from app.full_audit.schemas import PciStatus, SecurityCompliance, SslStatus
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,10 @@ def _detect_cookie_banner(html: str) -> str | None:
     return None
 
 
-def _gdpr_concerns(html: str, has_banner: bool) -> list[str]:
+_TRACKING_COOKIE_RE = re.compile(r"(?:^|\n)\s*(_fbp|_fbc|_ga|_gcl_au)=")
+
+
+def _gdpr_concerns(html: str, has_banner: bool, set_cookies: str = "") -> list[str]:
     concerns = []
     # Check if tracking present without consent banner
     has_tracking = any(p in html for p in [
@@ -90,10 +95,13 @@ def _gdpr_concerns(html: str, has_banner: bool) -> list[str]:
     if has_tracking and not has_banner:
         concerns.append("Tracking scripts detected without visible consent management")
 
-    # Check for third-party cookies being set immediately (heuristic)
-    if "_fbp" in html or "_ga" in html:
+    # Tracking cookies set by the server on the very first response — before any consent
+    # choice could have been made. (The old check was `"_ga" in html`, which matches
+    # almost every page: "_gallery", "_ga4", any "_gap"...) Cookies set later by
+    # JavaScript aren't visible here, so absence proves nothing.
+    if m := _TRACKING_COOKIE_RE.search(set_cookies):
         if not has_banner:
-            concerns.append("Analytics/ad cookies may load before user consent")
+            concerns.append(f"Trackingcookie {m.group(1)} wordt al bij de eerste paginaload gezet, zonder zichtbare cookiebanner")
 
     return concerns
 
@@ -102,11 +110,13 @@ async def check_security(store_url: str, pages: list[dict]) -> SecurityComplianc
     parsed = urlparse(store_url)
     hostname = parsed.hostname or ""
 
-    ssl_status, ssl_details = _check_ssl(hostname) if hostname else ("missing", "No hostname")
+    # Blocking socket handshake (up to its 10s timeout) — off the event loop, which is
+    # shared with the API server and the other 21 analyzers.
+    ssl_status, ssl_details = await asyncio.to_thread(_check_ssl, hostname) if hostname else ("missing", "No hostname")
 
     homepage_html = pages[0].get("html", "") if pages else ""
     banner_behavior = _detect_cookie_banner(homepage_html)
-    gdpr = _gdpr_concerns(homepage_html, banner_behavior is not None)
+    gdpr = _gdpr_concerns(homepage_html, banner_behavior is not None, set_cookie_text(pages[0]) if pages else "")
 
     # PCI heuristic: if checkout is handled by a known PSP, likely compliant.
     # `pages` is the generic crawl (homepage + internal links) — it almost never

@@ -25,6 +25,8 @@ def calculate_ad_traffic_impact(
     sessions_override: int | None = None,
     cr_override_pct: float | None = None,
     ad_spend_override: float | None = None,
+    mobile_share_override_pct: float | None = None,
+    mobile_cr_override_pct: float | None = None,
 ) -> AdTrafficImpact | None:
     # Build the SAME funnel model revenue_leak.py builds from the same inputs, so
     # this analyzer's AOV/CR/sessions/paid-share can never drift from the rest of
@@ -35,6 +37,8 @@ def calculate_ad_traffic_impact(
         sessions_override=sessions_override,
         cr_override_pct=cr_override_pct,
         ad_spend_override=ad_spend_override,
+        mobile_share_override_pct=mobile_share_override_pct,
+        mobile_cr_override_pct=mobile_cr_override_pct,
     )
     drivers: list[str] = []
     uplift = 0.0
@@ -42,7 +46,8 @@ def calculate_ad_traffic_impact(
 
     mobile = performance.mobile if performance else None
 
-    # LCP: Google CrUX-correlatie — elke seconde boven 2.5s voegt ~12pp bounce toe (cap 60pp).
+    # LCP: internal estimate (no published elasticity) — each second over 2.5s adds
+    # ~12pp bounce, capped at 60pp. Labelled as such in the methodology note below.
     # Uses the worst of the field measurement and the money-page lab run — the field
     # metric is homepage-only and can hide a much slower PDP/collection page.
     lcp_ms, lcp_source = worst_mobile_lcp(performance)
@@ -104,15 +109,15 @@ def calculate_ad_traffic_impact(
     lost_low = round(ad_sessions_low * (delta / 100) * funnel.conversion_rate * funnel.aov_eur)
     lost_high = round(ad_sessions_high * (delta / 100) * funnel.conversion_rate * funnel.aov_eur)
 
-    wasted_pct = tracking.est_attribution_loss_percent if tracking else None
+    attribution_loss_pct = tracking.est_attribution_loss_percent if tracking else None
 
     is_measured = funnel.data_source == "measured"
     if is_measured and traffic is not None:
         sessions_note = f"Gemeten via SE Ranking: {ad_sessions_low:,.0f} betaalde sessies/mnd."
     else:
         sessions_note = (
-            f"Heuristisch afgeleid: {ad_sessions_low:,.0f}–{ad_sessions_high:,.0f} "
-            f"ad-bezoeken/mnd (van €{funnel.monthly_revenue_eur:,.0f}/mnd omzet)."
+            f"Aantal betaalde bezoeken geschat op {ad_sessions_low:,.0f}–{ad_sessions_high:,.0f} "
+            f"per maand (uit €{funnel.monthly_revenue_eur:,.0f}/mnd omzet)."
         )
 
     return AdTrafficImpact(
@@ -121,12 +126,13 @@ def calculate_ad_traffic_impact(
         est_drop_off_per_1000_clicks=drop_off,
         est_monthly_lost_revenue_eur_low=float(lost_low) if delta > 0 else None,
         est_monthly_lost_revenue_eur_high=float(lost_high) if delta > 0 else None,
-        est_wasted_ad_spend_pct=wasted_pct,
+        est_attribution_loss_pct=attribution_loss_pct,
         bounce_drivers=drivers,
         methodology_note=(
-            f"{'Gemeten' if is_measured else 'Heuristische'} schatting op basis van Google CrUX-correlaties (LCP/INP → bounce-rate). "
-            f"{sessions_note} {funnel.conversion_rate * 100:.2f}% CVR, €{funnel.aov_eur:.0f} AOV. "
-            "Gebruik als indicatie, niet als gemeten benchmark."
+            "Eigen schatting: elke seconde laadtijd boven 2,5s en elke trage reactie telt als "
+            "extra afhakers bovenop een gezonde ~45%. "
+            f"{sessions_note} {funnel.conversion_rate * 100:.2f}% conversie, €{funnel.aov_eur:.0f} gemiddelde bestelwaarde. "
+            "Een indicatie, geen meting van jullie eigen advertentieverkeer."
         ),
         data_source="measured" if is_measured else "heuristic",
     )

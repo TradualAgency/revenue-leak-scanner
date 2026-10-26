@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from app.competitor_benchmark.comparison import build_comparisons
 from app.competitor_benchmark.gap_pricing import price_gap_to_market
 from app.competitor_benchmark.schemas import CompetitorSnapshot
@@ -94,3 +96,93 @@ def test_gap_to_best_emitted_alongside_gap_to_median():
     # best (1900) is further from the store than median (2100) -> bigger gap
     assert lcp_gap.gap_to_best_eur_high > lcp_gap.gap_to_median_eur_high
     assert best_hi is not None and best_hi >= lcp_gap.gap_to_best_eur_high
+
+
+def _shopify_checkout_snapshot(domain, fields):
+    from app.full_audit.schemas import CheckoutFlow, PlatformArchitecture
+    return CompetitorSnapshot(
+        domain=domain, measure_status="ok", measured_at=datetime.now(UTC),
+        platform=PlatformArchitecture(detected_platform="Shopify"),
+        checkout=CheckoutFlow(probe_status="ok", fields_in_address_form=fields),
+    )
+
+
+def test_address_field_gap_counts_fields_over_the_market_median_not_over_ten():
+    """18 fields against a market median of 12 is 6 fields too many. The old code
+    counted fields over the absolute Baymard baseline of 10 (8 here) and so priced the
+    absolute gap under a "vs. your market" label."""
+    store = _shopify_checkout_snapshot("store.com", 18)
+    competitors = [_shopify_checkout_snapshot(f"c{i}.com", 12) for i in range(3)]
+    funnel = _funnel()
+
+    gaps, *_ = price_gap_to_market(build_comparisons(store, competitors), funnel)
+
+    fields_gap = next(g for g in gaps if g.finding_id == "gap.checkout_address_fields")
+    n_over = 18 - 12
+    assert fields_gap.gap_to_median_eur_low == funnel.monthly_revenue_eur * n_over * 0.005
+    assert fields_gap.gap_to_median_eur_high == funnel.monthly_revenue_eur * n_over * 0.010
+
+
+def _tbt_snapshot(domain, tbt_ms):
+    return CompetitorSnapshot(
+        domain=domain, measure_status="ok", measured_at=datetime.now(UTC),
+        performance=Performance(mobile=MobileCWV(lcp_ms=2000), tbt_ms=tbt_ms,
+                                lighthouse=LighthouseScores(performance=80)),
+    )
+
+
+@pytest.mark.parametrize("store_tbt", [450, 650])
+def test_gap_inp_uses_the_same_curve_as_the_absolute_model(store_tbt):
+    """Same ms over the reference → same uplift, whether the reference is Google's
+    200ms threshold (absolute model) or a market median of 200ms (gap model). The gap
+    model used to price per 100ms linearly while the absolute model stepped."""
+    from app.full_audit.analyzers.benchmarks import inp_uplift
+    from app.full_audit.analyzers.revenue_leak import calculate_revenue_leak
+
+    store = _tbt_snapshot("store.com", store_tbt)
+    competitors = [_tbt_snapshot(f"c{i}.com", 200) for i in range(3)]
+    funnel = _funnel()
+    gaps, *_ = price_gap_to_market(build_comparisons(store, competitors), funnel)
+    gap = next(g for g in gaps if g.finding_id == "gap.inp_mobile")
+
+    exposure = (1 - funnel.paid_share) * funnel.mobile_share
+    low, high = inp_uplift(store_tbt - 200)
+    assert gap.gap_to_median_eur_low == pytest.approx(funnel.monthly_revenue_eur * exposure * low)
+    assert gap.gap_to_median_eur_high == pytest.approx(funnel.monthly_revenue_eur * exposure * high)
+
+    absolute = calculate_revenue_leak(
+        performance=Performance(tbt_ms=store_tbt), third_party=None, checkout=None,
+        cro_observations=[], rich_results=None, product_feeds=None, accessibility=None,
+        ad_traffic=None, sessions_override=100_000, cr_override_pct=2.0, aov_override=60.0,
+    )
+    inp = next(f for f in absolute.findings if f.finding_id == "perf.inp_mobile")
+    assert (inp.uplift_low, inp.uplift_high) == (low, high)
+
+
+def test_gap_speed_findings_cite_the_elasticity_not_only_the_market():
+    store = _snapshot("store.com", 4200)
+    competitors = [_snapshot(f"c{i}.com", 2100) for i in range(3)]
+    gaps, *_ = price_gap_to_market(build_comparisons(store, competitors), _funnel())
+    lcp_gap = next(g for g in gaps if g.finding_id == "gap.lcp_mobile")
+    assert lcp_gap.citation == "DELOITTE_MS_MILLIONS"
+    assert lcp_gap.citations == ["DELOITTE_MS_MILLIONS", "MARKET_MEDIAN_BENCHMARK"]
+
+
+def test_missing_express_pay_vs_market_is_diagnostic_not_priced():
+    from app.full_audit.schemas import CheckoutFlow, PlatformArchitecture
+
+    def snap(domain, methods):
+        return CompetitorSnapshot(
+            domain=domain, measure_status="ok", measured_at=datetime.now(UTC),
+            platform=PlatformArchitecture(detected_platform="Shopify"),
+            checkout=CheckoutFlow(probe_status="ok", express_checkout_methods=methods),
+        )
+
+    store = snap("store.com", [])
+    competitors = [snap(f"c{i}.com", ["Shop Pay"]) for i in range(3)]
+    gaps, med_lo, med_hi, *_ = price_gap_to_market(build_comparisons(store, competitors), _funnel())
+
+    express = next(g for g in gaps if g.finding_id == "gap.checkout_express")
+    assert express.kind == "diagnostic" and express.confidence == "low"
+    assert express.gap_to_median_eur_low is None
+    assert med_lo is None and med_hi is None  # nothing else priced in this fixture

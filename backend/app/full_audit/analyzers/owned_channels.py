@@ -4,6 +4,7 @@ import re
 
 from bs4 import BeautifulSoup
 
+from app.analysis.scraper import set_cookie_text
 from app.full_audit.schemas import OwnedChannels
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,8 @@ _NEWSLETTER_KEYWORDS = [
 _SMS_PATTERNS = [
     "cdn.attn.tv",      # Attentive
     "cdn.recart.com",   # Recart
-    "static.klaviyo.com",  # Klaviyo SMS
+    # Not static.klaviyo.com: every Klaviyo store loads it for email alone, so it
+    # marked every Klaviyo store "SMS active". Klaviyo SMS goes undetected instead.
     "postscript.io",    # Postscript
     "smsbump.com",
 ]
@@ -85,8 +87,7 @@ _NEWSLETTER_AI_ELEMENT_PATTERN = re.compile(
 
 def _detect_esp_from_headers(pages: list[dict]) -> tuple[str | None, str | None]:
     for page in pages:
-        headers = {k.lower(): v for k, v in page.get("headers", {}).items()}
-        set_cookie = headers.get("set-cookie", "")
+        set_cookie = set_cookie_text(page)
         for esp, cookies in _ESP_COOKIE_PATTERNS.items():
             for cookie in cookies:
                 if cookie in set_cookie:
@@ -100,6 +101,31 @@ def _detect_esp_from_html(html: str) -> tuple[str | None, str | None]:
             if pattern in html:
                 return esp, f"Script or inline reference: {pattern}"
     return None, None
+
+
+_NON_SIGNUP_FORM_ACTIONS = ("/account", "/login", "/search", "/cart", "/checkout", "/challenge")
+
+
+def _is_shopify_newsletter_form(form) -> bool:
+    """Shopify's stock newsletter form posts to /contact like the contact form does,
+    but carries form_type=customer and/or a contact[tags] containing "newsletter"."""
+    form_type = form.find("input", attrs={"name": "form_type"})
+    tags = form.find("input", attrs={"name": "contact[tags]"})
+    return bool(
+        (form_type and str(form_type.get("value", "")).lower() == "customer")
+        or (tags and "newsletter" in str(tags.get("value", "")).lower())
+    )
+
+
+def _could_be_signup_form(form) -> bool:
+    action = str(form.get("action", "")).lower()
+    if any(part in action for part in _NON_SIGNUP_FORM_ACTIONS):
+        return False
+    if "/contact" in action and not _is_shopify_newsletter_form(form):
+        return False
+    if form.find("input", attrs={"type": "password"}) or form.find("textarea"):
+        return False
+    return True
 
 
 def _detect_newsletter_capture(html: str) -> tuple[bool, str | None]:
@@ -130,8 +156,11 @@ def _detect_newsletter_capture(html: str) -> tuple[bool, str | None]:
         if any(kw in nearby for kw in _NEWSLETTER_KEYWORDS):
             return True, f"email input met attribuut: '{nearby[:50].strip()}'"
 
-    # Path C: any form with email input (fallback)
+    # Path C: any form with email input (fallback) — but not the login, account,
+    # contact, search or cart forms every store has, which also take an email.
     for form in soup.find_all("form"):
+        if not _could_be_signup_form(form):
+            continue
         for inp in form.find_all("input"):
             inp_type = str(inp.get("type", "")).lower()
             inp_name = str(inp.get("name", "")).lower()

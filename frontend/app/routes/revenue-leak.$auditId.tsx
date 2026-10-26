@@ -4,27 +4,31 @@ import {
   NextStepsSection,
   relevantStepsFromRevenueLeak,
 } from "~/components/NextSteps";
+import ActionList from "~/components/report/ActionList";
+import AdTrafficImpact from "~/components/report/AdTrafficImpact";
+import AssumptionsSection from "~/components/report/AssumptionsSection";
 import HeroFigure from "~/components/report/HeroFigure";
-import KpiTile from "~/components/report/KpiTile";
 import Notice from "~/components/report/Notice";
 import ReportCard from "~/components/report/ReportCard";
 import ReportShell from "~/components/report/ReportShell";
 import ReportSpinner from "~/components/report/ReportSpinner";
+import RoadmapSection from "~/components/report/RoadmapSection";
 import SectionLabel from "~/components/report/SectionLabel";
 import StatusPill from "~/components/report/StatusPill";
-import { getFullAudit, getFullAuditStatus } from "~/lib/api";
-import { eur, eurRange, eurRangeParts, severityByShare } from "~/lib/format";
+import { getClientAuditReport, getFullAuditStatus } from "~/lib/api";
+import { conflictTitle, eur, eurRange, eurRangeParts, severityByShare } from "~/lib/format";
 import type {
-  CeoTriggerKpi,
+  ClientAuditReport,
+  ClientCeoTrigger,
+  ClientCitation,
+  ClientRevenueLeakReport,
   DataConflict,
   FullAuditStatusResponse,
   ModelWarning,
   RevenueLeakLayer,
   RevenueLeakMetric,
-  RevenueLeakReport,
-  RoiCalculation,
-  SeRankingTraffic,
 } from "~/lib/types";
+import { BOOK_A_CALL_URL } from "~/lib/links";
 
 const POLL_INTERVAL = 3000;
 
@@ -57,33 +61,20 @@ function layerAnnualRange(l: RevenueLeakLayer): { low: number | null; high: numb
   }
   return { low: l.est_annual_loss_eur ?? null, high: l.est_annual_loss_eur ?? null };
 }
-function reportMonthlyRange(data: RevenueLeakReport): { low: number; high: number } {
+function reportMonthlyRange(data: ClientRevenueLeakReport): { low: number; high: number } {
   if (data.total_monthly_loss_eur_low != null && data.total_monthly_loss_eur_high != null) {
     return { low: data.total_monthly_loss_eur_low, high: data.total_monthly_loss_eur_high };
   }
   const v = data.total_monthly_loss_eur || 0;
   return { low: v, high: v };
 }
-function reportAnnualRange(data: RevenueLeakReport): { low: number; high: number } {
+function reportAnnualRange(data: ClientRevenueLeakReport): { low: number; high: number } {
   if (data.total_annual_loss_eur_low != null && data.total_annual_loss_eur_high != null) {
     return { low: data.total_annual_loss_eur_low, high: data.total_annual_loss_eur_high };
   }
   const v = data.total_annual_loss_eur || 0;
   return { low: v, high: v };
 }
-function roiPaybackRange(roi: RoiCalculation): { best: number | null; worst: number | null } {
-  if (roi.payback_months_best != null && roi.payback_months_worst != null) {
-    return { best: roi.payback_months_best, worst: roi.payback_months_worst };
-  }
-  return { best: roi.payback_months ?? null, worst: roi.payback_months ?? null };
-}
-function roiYearOneRange(roi: RoiCalculation): { low: number; high: number } {
-  if (roi.year_one_net_return_eur_low != null && roi.year_one_net_return_eur_high != null) {
-    return { low: roi.year_one_net_return_eur_low, high: roi.year_one_net_return_eur_high };
-  }
-  return { low: roi.year_one_net_return_eur, high: roi.year_one_net_return_eur };
-}
-
 function PriorityDot({ priority }: { priority: RevenueLeakMetric["priority"] }) {
   // Bumped a step darker than the dark theme used: a 6px dot in `orange-400` /
   // `yellow-400` all but disappears on #FAFAF8.
@@ -104,7 +95,7 @@ function DataConflictBanner({ conflicts }: { conflicts: DataConflict[] }) {
         <Notice
           key={i}
           tone={c.severity === "critical" ? "danger" : "warning"}
-          title={`Tegenstrijdige invoer — ${c.ratio.toFixed(1)}x verschil`}
+          title={conflictTitle(c)}
         >
           {c.message_nl}
         </Notice>
@@ -126,7 +117,49 @@ function ModelWarnings({ warnings }: { warnings: ModelWarning[] }) {
   );
 }
 
-function MetricRow({ m, funnelRevenue }: { m: RevenueLeakMetric; funnelRevenue: number | null }) {
+const CONFIDENCE_NL = { high: "hoog", medium: "redelijk", low: "laag" } as const;
+
+function pctRange(low: number | null | undefined, high: number | null | undefined): string | null {
+  if (low == null || high == null) return null;
+  const f = (n: number) => `${(n * 100).toLocaleString("nl-NL", { maximumFractionDigits: 1 })}%`;
+  return low === high ? f(low) : `${f(low)}–${f(high)}`;
+}
+
+/** "How was this number built?" — only for metrics that carry the funnel-model
+ * bookkeeping (v2 reports); v1 rows have nothing to show here. */
+function MetricBasis({ m, citations }: { m: RevenueLeakMetric; citations: Record<string, ClientCitation> }) {
+  const uplift = pctRange(m.uplift_low, m.uplift_high);
+  const citation = m.citation ? citations[m.citation] : undefined;
+  const rows: [string, string][] = [];
+  if (m.exposure_share != null) rows.push(["Deel van de omzet dat dit raakt", pctRange(m.exposure_share, m.exposure_share)!]);
+  if (uplift) rows.push(["Geschat effect op conversie", uplift]);
+  if (m.confidence) rows.push(["Zekerheid", CONFIDENCE_NL[m.confidence]]);
+  if (citation) rows.push(["Bron", citation.verified ? citation.source : `${citation.source} (nog niet onafhankelijk geverifieerd)`]);
+  if (m.pages_affected && m.pages_affected.length > 0) rows.push(["Pagina's", m.pages_affected.join(", ")]);
+  if (rows.length === 0) return null;
+  return (
+    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[10px] text-gray-500">
+      {rows.map(([k, v]) => (
+        <div key={k} className="contents">
+          <dt>{k}</dt>
+          <dd className="text-gray-700">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function MetricRow({
+  m,
+  funnelRevenue,
+  citations,
+}: {
+  m: RevenueLeakMetric;
+  funnelRevenue: number | null;
+  citations: Record<string, ClientCitation>;
+}) {
+  const [showBasis, setShowBasis] = useState(false);
+  const hasBasis = m.exposure_share != null || m.uplift_high != null || m.citation != null;
   const { low, high } = metricRange(m);
   const { low: annualLow, high: annualHigh } = metricAnnualRange(m);
   const share = high != null && funnelRevenue ? high / funnelRevenue : null;
@@ -159,12 +192,29 @@ function MetricRow({ m, funnelRevenue }: { m: RevenueLeakMetric; funnelRevenue: 
           </div>
         </div>
         <p className="text-[10px] text-gray-500 mt-1 leading-snug">{m.basis || m.calculation_note}</p>
+        {hasBasis && (
+          <button
+            onClick={() => setShowBasis((o) => !o)}
+            className="mt-1 text-[10px] font-medium text-[#0a2f23] underline underline-offset-2"
+          >
+            {showBasis ? "Onderbouwing verbergen" : "Onderbouwing"}
+          </button>
+        )}
+        {showBasis && <MetricBasis m={m} citations={citations} />}
       </div>
     </div>
   );
 }
 
-function LayerCard({ layer, funnelRevenue }: { layer: RevenueLeakLayer; funnelRevenue: number | null }) {
+function LayerCard({
+  layer,
+  funnelRevenue,
+  citations,
+}: {
+  layer: RevenueLeakLayer;
+  funnelRevenue: number | null;
+  citations: Record<string, ClientCitation>;
+}) {
   const [open, setOpen] = useState(false);
   const { low, high } = layerRange(layer);
   const isNa = low == null || high == null;
@@ -204,7 +254,7 @@ function LayerCard({ layer, funnelRevenue }: { layer: RevenueLeakLayer; funnelRe
       {open && layer.metrics.length > 0 && (
         <div className="border-t border-gray-100 px-5 py-1 bg-gray-50">
           {layer.metrics.map((m) => (
-            <MetricRow key={m.metric} m={m} funnelRevenue={funnelRevenue} />
+            <MetricRow key={m.metric} m={m} funnelRevenue={funnelRevenue} citations={citations} />
           ))}
         </div>
       )}
@@ -212,7 +262,7 @@ function LayerCard({ layer, funnelRevenue }: { layer: RevenueLeakLayer; funnelRe
   );
 }
 
-function TriggerCard({ t }: { t: CeoTriggerKpi }) {
+function TriggerCard({ t }: { t: ClientCeoTrigger }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`border rounded-2xl shadow-sm overflow-hidden transition-colors ${t.triggered ? "border-red-200 bg-red-50" : "border-gray-100 bg-white"}`}>
@@ -227,72 +277,14 @@ function TriggerCard({ t }: { t: CeoTriggerKpi }) {
       {open && (
         <div className={`border-t px-4 py-3 space-y-2 ${t.triggered ? "border-red-200" : "border-gray-100"}`}>
           <p className="text-xs text-gray-700 leading-relaxed">{t.real_meaning}</p>
-          <blockquote className="border-l-2 border-[#c5a96f] pl-3 text-xs text-gray-700 italic leading-relaxed">
-            "{t.tradual_pitch}"
-          </blockquote>
-          <p className="text-[11px] text-gray-500">Oplossing: {t.tradual_solution}</p>
-          <p className="text-[10px] text-gray-500">Alarm: {t.alarm_signal}</p>
+          {t.benchmark && <p className="text-[11px] text-gray-500">Benchmark: {t.benchmark}</p>}
         </div>
       )}
     </div>
   );
 }
 
-function RoiBlock({ roi }: { roi: RoiCalculation }) {
-  const leakRange = { low: roi.monthly_leak_eur_low ?? roi.monthly_leak_eur, high: roi.monthly_leak_eur_high ?? roi.monthly_leak_eur };
-  const annualRange = { low: roi.annual_leak_eur_low ?? roi.annual_leak_eur, high: roi.annual_leak_eur_high ?? roi.annual_leak_eur };
-  const payback = roiPaybackRange(roi);
-  const yearOne = roiYearOneRange(roi);
-  const leakParts = eurRangeParts(leakRange.low, leakRange.high);
-  const annualParts = eurRangeParts(annualRange.low, annualRange.high);
-  const yearOneParts = eurRangeParts(yearOne.low, yearOne.high);
-  const negativeAtLowBound = yearOne.low < 0;
-
-  return (
-    <ReportCard className="p-6 space-y-4">
-      <SectionLabel className="">ROI — Terugverdientijd Stack Rebuild™</SectionLabel>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiTile
-          tone="loss"
-          value={leakParts.lead}
-          tail={leakParts.tail}
-          label={<>directe lekkage/mnd<br />(laag 1+3)</>}
-        />
-        <KpiTile
-          tone="loss"
-          value={annualParts.lead}
-          tail={annualParts.tail}
-          label="per jaar"
-        />
-        <KpiTile
-          tone="accent"
-          value={
-            <>
-              {payback.best != null && payback.worst != null
-                ? payback.best === payback.worst ? `${payback.best}` : `${payback.best}–${payback.worst}`
-                : "—"}
-              <span className="text-base font-normal text-gray-500 ml-1">mnd</span>
-            </>
-          }
-          label={<>terugverdientijd<br />({eur(roi.stack_rebuild_cost_eur)} investering)</>}
-        />
-        <KpiTile
-          tone={negativeAtLowBound ? "warning" : "good"}
-          value={yearOneParts.lead}
-          tail={yearOneParts.tail}
-          label={
-            <>
-              netto rendement jaar 1
-              {negativeAtLowBound && <><br /><span className="text-amber-600">bij ondergrens niet terugverdiend in jaar 1</span></>}
-            </>
-          }
-        />
-      </div>
-    </ReportCard>
-  );
-}
-
-function TotalsTable({ data }: { data: RevenueLeakReport }) {
+function TotalsTable({ data }: { data: ClientRevenueLeakReport }) {
   const isV2 = data.model_version != null;
   const direct = reportMonthlyRange(data);
   const directAnnual = reportAnnualRange(data);
@@ -371,7 +363,7 @@ function Cta() {
         Stap 1 heb je net gehad. Laten we bespreken wat voor jouw situatie het meest oplevert.
       </p>
       <a
-        href="https://tradual.com/contact"
+        href={BOOK_A_CALL_URL}
         className="inline-block bg-tradual-accent text-tradual-primary px-8 py-3 font-medium hover:opacity-90 transition"
       >
         Plan een strategiegesprek
@@ -391,8 +383,7 @@ function LoadingState() {
 export default function RevenueLeakAuditPage() {
   const { auditId } = useParams<{ auditId: string }>();
   const [status, setStatus] = useState<FullAuditStatusResponse | null>(null);
-  const [data, setData] = useState<RevenueLeakReport | null>(null);
-  const [serankingTraffic, setSerankingTraffic] = useState<SeRankingTraffic | null>(null);
+  const [report, setReport] = useState<ClientAuditReport | null>(null);
   const [storeUrl, setStoreUrl] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -410,11 +401,10 @@ export default function RevenueLeakAuditPage() {
         setStoreUrl(s.store_url);
 
         if (s.status === "ready_for_review") {
-          const full = await getFullAudit(auditId!);
+          const report = await getClientAuditReport(auditId!);
           if (stopped) return;
-          setData(full.data?.revenue_leak ?? null);
-          setSerankingTraffic(full.data?.seranking_traffic ?? null);
-          setCompanyName(full.company_name ?? s.store_url);
+          setReport(report);
+          setCompanyName(report.company_name ?? s.store_url);
           setLoading(false);
         } else if (s.status === "failed") {
           setError("De audit is mislukt. Probeer het opnieuw.");
@@ -442,7 +432,8 @@ export default function RevenueLeakAuditPage() {
       </ReportShell>
     );
   }
-  if (!data) {
+  const data = report?.revenue_leak ?? null;
+  if (!report || !data) {
     return (
       <ReportShell>
         <div className="max-w-3xl mx-auto">
@@ -461,6 +452,9 @@ export default function RevenueLeakAuditPage() {
   const funnelRevenue = data.funnel?.monthly_revenue_eur ?? null;
   const conflicts = data.data_conflicts ?? [];
   const warnings = data.model_warnings ?? [];
+  const serankingTraffic = report.seranking_traffic;
+  const roadmap = report.roadmap;
+  const citations = Object.fromEntries(report.citations.map((c) => [c.key, c]));
 
   return (
     <ReportShell>
@@ -483,8 +477,22 @@ export default function RevenueLeakAuditPage() {
           )}
         </div>
 
+        {roadmap?.executive_summary && (
+          <ReportCard className="p-5">
+            <SectionLabel className="mb-2">In het kort</SectionLabel>
+            <p className="text-sm text-gray-800 leading-relaxed">{roadmap.executive_summary}</p>
+            {roadmap.north_star_metric && (
+              <p className="text-xs text-gray-500 mt-3">
+                Het cijfer om op te sturen: <span className="text-gray-800 font-medium">{roadmap.north_star_metric}</span>
+              </p>
+            )}
+          </ReportCard>
+        )}
+
         {/* Data conflicts — surfaced before the euros so they're read first */}
         <DataConflictBanner conflicts={conflicts} />
+
+        <ActionList actions={data.actions ?? []} />
 
         {/* CEO Triggers */}
         {allKpis.length > 0 && (
@@ -500,12 +508,14 @@ export default function RevenueLeakAuditPage() {
           </div>
         )}
 
+        {report.ad_traffic_impact && <AdTrafficImpact data={report.ad_traffic_impact} />}
+
         {/* De 5 Lagen */}
         <div>
           <SectionLabel>De 5 Meetlagen</SectionLabel>
           <div className="space-y-2">
             {data.layers.map((layer) => (
-              <LayerCard key={layer.layer} layer={layer} funnelRevenue={funnelRevenue} />
+              <LayerCard key={layer.layer} layer={layer} funnelRevenue={funnelRevenue} citations={citations} />
             ))}
           </div>
         </div>
@@ -516,13 +526,17 @@ export default function RevenueLeakAuditPage() {
           <TotalsTable data={data} />
         </div>
 
-        {/* ROI */}
-        {data.roi && <RoiBlock roi={data.roi} />}
+        {roadmap && <RoadmapSection roadmap={roadmap} />}
 
         <ModelWarnings warnings={warnings} />
 
-        {/* Data source badge */}
-        {serankingTraffic ? (
+        {report.assumptions.length > 0 ? (
+          <AssumptionsSection
+            assumptions={report.assumptions}
+            citations={report.citations}
+            methodologyNote={report.methodology_note}
+          />
+        ) : serankingTraffic ? (
           <div className="flex items-center gap-2">
             <StatusPill tone="ok" size="md">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
@@ -541,12 +555,9 @@ export default function RevenueLeakAuditPage() {
         {/* Next steps */}
         <NextStepsSection relevant={relevantStepsFromRevenueLeak(data)} />
 
-        {/* Methodology */}
-        {data.methodology_note && (
+        {/* Legacy (pre-funnel) reports have no assumptions table — keep their notes */}
+        {report.assumptions.length === 0 && data.methodology_note && (
           <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.methodology_note}</p>
-        )}
-        {data.funnel?.methodology_note && (
-          <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.funnel.methodology_note}</p>
         )}
 
         <Cta />

@@ -2,6 +2,8 @@ import re
 
 from bs4 import BeautifulSoup
 
+from app.full_audit.analyzers.jsonld import jsonld_nodes, node_types
+from app.full_audit.analyzers.performance import lcp_source_caveat, worst_mobile_lcp
 from app.full_audit.page_sampling import PAGE_LABELS as _PAGE_LABELS
 from app.full_audit.page_sampling import sample_pages_by_type as _sample_pages_by_type
 from app.full_audit.schemas import CheckoutFlow, CroObservation, Performance, RichResultsHealth
@@ -11,6 +13,20 @@ _REVIEW_PLATFORM_DOMAINS = [
     "judge.me", "loox.io", "yotpo.com", "reviews.io", "okendo", "stamped.io",
     "reviewmeester.nl", "webwinkelkeur.nl", "klantenvertellen.nl",
     "verified-reviews.com", "shopify.com/product-reviews",
+]
+
+# Review apps that render through Shopify theme app blocks / app extensions. Their
+# widgets often have no third-party src at all (assets come from cdn.shopify.com/
+# extensions/...), so the domain check above misses them; their markup and asset
+# names don't.
+_REVIEW_APP_MARKERS = [
+    "jdgm-", "judgeme",                 # Judge.me
+    "loox-rating", "loox-reviews",      # Loox
+    "okeReviews", "oke-reviews",        # Okendo
+    "yotpo-widget", "yotpo-main-widget",
+    "stamped-product-reviews", "stamped-main-widget",
+    "junip-",                           # Junip
+    "spr-badge", "shopify-product-reviews",
 ]
 
 _RATING_PATTERN = re.compile(
@@ -49,8 +65,16 @@ def _detect_social_proof(html: str, has_aggregate_rating: bool = False) -> tuple
             if domain in src.lower():
                 return True, f"{domain} widget gedetecteerd"
 
-    # Signal 2: structured data
-    if has_aggregate_rating:
+    # Signal 1b: review app rendered through a Shopify app block / extension
+    for marker in _REVIEW_APP_MARKERS:
+        if marker in html:
+            return True, f"review-app gedetecteerd ({marker})"
+
+    # Signal 2: structured data — site-wide flag, or a rating nested in this page's JSON-LD
+    if has_aggregate_rating or any(
+        "AggregateRating" in node_types(n) or isinstance(n.get("aggregateRating"), dict)
+        for n in jsonld_nodes(html)
+    ):
         return True, "AggregateRating schema aanwezig"
 
     # Signal 3: rating number + label strict pattern
@@ -69,20 +93,22 @@ def make_cro_observations(
 ) -> list[CroObservation]:
     observations: list[CroObservation] = []
 
-    # 1. LCP check
-    if performance and performance.mobile:
-        lcp = performance.mobile.lcp_ms
+    # 1. LCP check — the same worst-of-field-and-money-page figure the revenue model
+    # and the headline use, so the three can't quote different load times.
+    if performance:
+        lcp, lcp_source = worst_mobile_lcp(performance)
+        caveat = lcp_source_caveat(performance, lcp_source)
         if lcp and lcp > 4000:
             observations.append(CroObservation(
                 page="Homepage (mobile)",
-                observation=f"Mobile LCP is {lcp / 1000:.1f}s — well above Google's 'poor' threshold of 4s.",
+                observation=f"Mobile LCP is {lcp / 1000:.1f}s{caveat} — well above Google's 'poor' threshold of 4s.",
                 severity="high",
                 est_impact="High — slow LCP directly causes visitor drop-off before first interaction.",
             ))
         elif lcp and lcp > 2500:
             observations.append(CroObservation(
                 page="Homepage (mobile)",
-                observation=f"Mobile LCP is {lcp / 1000:.1f}s — above Google's 2.5s 'good' threshold.",
+                observation=f"Mobile LCP is {lcp / 1000:.1f}s{caveat} — above Google's 2.5s 'good' threshold.",
                 severity="medium",
                 est_impact="Medium — every 100ms above 2.5s correlates with ~1% conversion loss.",
             ))

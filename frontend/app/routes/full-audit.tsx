@@ -54,6 +54,8 @@ function FullAuditIntake() {
   const [monthlySessions, setMonthlySessions] = useState("");
   const [conversionRate, setConversionRate] = useState("");
   const [monthlyAdSpend, setMonthlyAdSpend] = useState("");
+  const [mobileShare, setMobileShare] = useState("");
+  const [mobileConversionRate, setMobileConversionRate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +70,8 @@ function FullAuditIntake() {
       const parsedSessions = monthlySessions.trim() ? Number(monthlySessions.trim()) : undefined;
       const parsedCr = conversionRate.trim() ? Number(conversionRate.trim()) : undefined;
       const parsedAdSpend = monthlyAdSpend.trim() ? Number(monthlyAdSpend.trim()) : undefined;
+      const parsedMobileShare = mobileShare.trim() ? Number(mobileShare.trim()) : undefined;
+      const parsedMobileCr = mobileConversionRate.trim() ? Number(mobileConversionRate.trim()) : undefined;
       const res = await createFullAudit({
         store_url: storeUrl.trim(),
         company_name: companyName.trim() || undefined,
@@ -79,6 +83,8 @@ function FullAuditIntake() {
         monthly_sessions: parsedSessions && parsedSessions > 0 ? parsedSessions : undefined,
         conversion_rate_pct: parsedCr && parsedCr > 0 ? parsedCr : undefined,
         monthly_ad_spend_eur: parsedAdSpend && parsedAdSpend > 0 ? parsedAdSpend : undefined,
+        mobile_share_pct: parsedMobileShare && parsedMobileShare > 0 && parsedMobileShare <= 100 ? parsedMobileShare : undefined,
+        mobile_conversion_rate_pct: parsedMobileCr && parsedMobileCr > 0 ? parsedMobileCr : undefined,
       });
       navigate(`/full-audit/${res.id}`);
     } catch (err) {
@@ -211,7 +217,7 @@ function FullAuditIntake() {
               <div>
                 <p className="text-sm font-medium text-gray-700">Business inputs (optioneel)</p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Vervangt de aannames (AOV-bucket, 3% CVR, 15%-van-omzet ad spend) in het revenue-leak model door de echte cijfers van de klant.
+                  Vervangt de aannames (AOV-bucket, benchmark-CVR, 15%-van-omzet ad spend, 70% mobiel) in het revenue-leak model door de echte cijfers van de klant.
                 </p>
               </div>
 
@@ -262,6 +268,32 @@ function FullAuditIntake() {
                     value={monthlyAdSpend}
                     onChange={(e) => setMonthlyAdSpend(e.target.value)}
                     placeholder="3500"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Mobiel aandeel verkeer (%)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100"
+                    value={mobileShare}
+                    onChange={(e) => setMobileShare(e.target.value)}
+                    placeholder="72"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Conversieratio mobiel (%)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.1"
+                    value={mobileConversionRate}
+                    onChange={(e) => setMobileConversionRate(e.target.value)}
+                    placeholder="1.6"
                     className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
                   />
                 </div>

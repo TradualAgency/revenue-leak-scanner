@@ -106,6 +106,48 @@ STAGE_UPLIFT_CEILINGS: dict[str, float] = {
 GLOBAL_UPLIFT_CEILING = 0.50
 
 
+# ---------------------------------------------------------------------------
+# Uplift curves shared by the absolute model (revenue_leak.py) and the
+# gap-to-market model (competitor_benchmark/gap_pricing.py). They used to be
+# written out inline in both places and had drifted: the gap model priced
+# TBT linearly per 100ms while the absolute model used a step function. One
+# definition means "how much does X seconds/ms of slowness cost" has one
+# answer; only the reference point (Google's threshold vs. the market) differs.
+# ---------------------------------------------------------------------------
+
+# LCP: extrapolated from DELOITTE_MS_MILLIONS (see its our_interpretation) —
+# 2-5% per second over the reference, capped at 10% / 25%.
+LCP_UPLIFT_PER_S = (0.02, 0.05)
+LCP_UPLIFT_CAP = (0.10, 0.25)
+
+# INP, measured via its lab proxy TBT: INTERNAL_ESTIMATE, a two-step curve.
+# Google's "good" TBT threshold is 200ms; >300ms over it (i.e. >500ms absolute)
+# is the severe step.
+INP_GOOD_TBT_MS = 200.0
+INP_SEVERE_OVER_MS = 300.0
+INP_UPLIFT_MILD = (0.01, 0.03)
+INP_UPLIFT_SEVERE = (0.03, 0.06)
+
+
+def lcp_uplift(seconds_over_reference: float) -> tuple[float, float] | None:
+    """(low, high) relative conversion uplift for an LCP this many seconds over the
+    reference, or None when it isn't over."""
+    if seconds_over_reference <= 0:
+        return None
+    return (
+        min(LCP_UPLIFT_CAP[0], seconds_over_reference * LCP_UPLIFT_PER_S[0]),
+        min(LCP_UPLIFT_CAP[1], seconds_over_reference * LCP_UPLIFT_PER_S[1]),
+    )
+
+
+def inp_uplift(ms_over_reference: float) -> tuple[float, float] | None:
+    """(low, high) relative conversion uplift for a TBT this many ms over the
+    reference, or None when it isn't over."""
+    if ms_over_reference <= 0:
+        return None
+    return INP_UPLIFT_SEVERE if ms_over_reference > INP_SEVERE_OVER_MS else INP_UPLIFT_MILD
+
+
 @dataclass(frozen=True)
 class Citation:
     """A source backing a benchmark number, plus how far we trust it.
@@ -125,6 +167,11 @@ class Citation:
     our_interpretation: str
     verified: bool = False
     url: str | None = None
+    # What the client report shows (Dutch, plain language). The English fields above
+    # are the working notes for whoever verifies the source.
+    figure_nl: str = ""
+    note_nl: str = ""
+    source_nl: str = ""  # only where `source` is prose rather than a publication title
 
 
 CITATIONS: dict[str, Citation] = {
@@ -138,6 +185,10 @@ CITATIONS: dict[str, Citation] = {
             "tool detects. Our uplift range is our own extrapolation from that base rate, "
             "clamped well below a linear scale-up — it is not a number from the study."
         ),
+        figure_nl="0,1 seconde sneller op mobiel hing samen met +8,4% conversie in retail.",
+        note_nl=(
+            "Het onderzoek meet een verbetering van 0,1 seconde, niet de meerdere seconden die wij zien. Onze bandbreedte is een eigen, voorzichtige doortrekking van dat cijfer — geen getal uit het onderzoek zelf."
+        ),
     ),
     "BAYMARD_CART_ABANDONMENT": Citation(
         source="Baymard Institute, cart abandonment rate meta-study",
@@ -145,6 +196,10 @@ CITATIONS: dict[str, Citation] = {
         applies_to="FUNNEL_STAGE_RATES['cart_to_checkout']",
         our_interpretation="Baymard updates this figure periodically; pin the exact "
                             "value and retrieval date before shipping.",
+        figure_nl="Gemiddeld ~70% van de winkelmandjes wordt verlaten (meta-onderzoek over ~49 studies).",
+        note_nl=(
+            "Gebruikt om de vorm van de funnel te schatten, niet om een bedrag uit te rekenen."
+        ),
     ),
     "BAYMARD_CHECKOUT_ABANDONMENT": Citation(
         source="Baymard Institute, checkout usability research",
@@ -153,18 +208,44 @@ CITATIONS: dict[str, Citation] = {
         applies_to="checkout.no_guest uplift range; reach_checkout stage ceiling",
         our_interpretation="Two related but distinct figures from Baymard's research — "
                             "verify both independently before use.",
+        figure_nl="Verplicht een account aanmaken is een van de grootste redenen om de checkout te verlaten; een volledig herontwerp van de checkout kan tot ~35% conversie terugwinnen.",
+        note_nl=(
+            "Wij rekenen met een voorzichtige fractie daarvan, afhankelijk van wat we in jullie checkout zagen."
+        ),
     ),
     "SPIEGEL_REVIEWS": Citation(
         source="Spiegel Research Center, Northwestern University (2017)",
         figure="Purchase likelihood +270% comparing 5 reviews to 0 reviews "
                "(up to +380% for higher-priced items)",
-        applies_to="cro.social_proof (informational only — not priced)",
+        applies_to="cro.social_proof uplift (priced only when a product page was sampled and "
+                   "showed no review signal of any kind)",
         our_interpretation=(
-            "This compares zero reviews to five, not 'our scraper could not find a "
-            "review widget in server-rendered HTML'. Since our own detection has a "
-            "known false-negative rate against client-side-rendered review apps, this "
-            "finding stays confidence=low and unpriced rather than borrowing this "
-            "multiplier directly."
+            "This compares zero reviews to five, not 'our scraper found no review "
+            "widget'. We price only the case where a sampled product page shows no "
+            "review platform, no review-app markup, no rating schema and no rating text "
+            "— and then at 2-5%, a small fraction of the study's effect. Anywhere the "
+            "detection is weaker (no PDP sampled), the finding stays low and unpriced."
+        ),
+        figure_nl="Producten met 5 reviews worden tot 270% vaker gekocht dan producten zonder reviews.",
+        note_nl=(
+            "We rekenen alleen als een productpagina helemaal geen reviews of sterren toonde, "
+            "en dan met 2–5% — een klein deel van het effect uit het onderzoek."
+        ),
+    ),
+    "BAYMARD_EXTRA_COSTS": Citation(
+        source="Baymard Institute, reasons for checkout abandonment",
+        figure="~48% of shoppers who abandoned a checkout cite extra costs (shipping, "
+               "taxes, fees) being too high as a reason — the most-cited reason",
+        applies_to="shipping.cost_clarity uplift",
+        our_interpretation=(
+            "The study measures costs that are too high, not costs that are shown late. "
+            "We price only a small 1-3% effect of shipping costs first appearing at "
+            "checkout instead of on the product page."
+        ),
+        figure_nl="~48% van de afhakers in de checkout noemt extra kosten (verzending, belasting) als reden — de meest genoemde reden.",
+        note_nl=(
+            "Het onderzoek gaat over te hoge kosten, niet over onduidelijke. We rekenen daarom "
+            "alleen een klein effect (1–3%) van verzendkosten die pas in de checkout zichtbaar worden."
         ),
     ),
     "LITTLEDATA_SHOPIFY_BENCHMARKS": Citation(
@@ -174,20 +255,29 @@ CITATIONS: dict[str, Citation] = {
                    "['product_view_to_cart']",
         our_interpretation="Republished on a rolling basis; pin the specific "
                             "edition/quarter used before shipping.",
+        figure_nl="Gemiddelde doorstroom van bezoek naar productpagina en van productpagina naar winkelmand bij Shopify-winkels.",
+        note_nl=(
+            "Gebruikt om de vorm van de funnel te schatten, niet om een bedrag uit te rekenen."
+        ),
     ),
     "MARKET_MEDIAN_BENCHMARK": Citation(
         source="Tradual competitor benchmark — live measurement of the audited store's "
                "own discovered competitor set",
         figure="Store's own metric value vs. the measured median/best of its competitor set",
-        applies_to="competitor_benchmark gap.* findings (gap-to-market euro figures)",
+        applies_to="the REFERENCE POINT of competitor_benchmark gap.* findings",
         our_interpretation=(
-            "This is a first-party measurement, not an extrapolation from a published "
-            "study — the cited 'benchmark' is literally what the store's own market was "
-            "observed to achieve. Still subject to the same funnel exposure/uplift model "
-            "as every other finding, and only priced when at least 3 competitors were "
-            "successfully measured on the metric in question."
+            "Verified only as a reference value: it is literally what the store's own "
+            "market was observed to achieve (priced only when at least 3 competitors "
+            "were measured). The euro elasticity applied to the gap is NOT covered by "
+            "this citation — gap findings carry the elasticity's own citation "
+            "(e.g. DELOITTE_MS_MILLIONS, unverified) alongside this one."
         ),
         verified=True,
+        source_nl="Tradual marktvergelijking — gemeten bij jullie eigen concurrenten",
+        figure_nl="Wat jullie eigen concurrenten gemeten halen (mediaan en beste).",
+        note_nl=(
+            "Het vergelijkingspunt is echt gemeten; de omrekening naar euro's gebruikt dezelfde aannames als de rest van dit rapport."
+        ),
     ),
     "INTERNAL_ESTIMATE": Citation(
         source="No external source",
@@ -197,5 +287,10 @@ CITATIONS: dict[str, Citation] = {
         our_interpretation="Kept deliberately small and capped at confidence=medium; "
                             "never drives more than a minor share of a stage's ceiling.",
         verified=True,  # honestly labelled as internal — nothing to verify externally
+        source_nl="Eigen schatting Tradual",
+        figure_nl="Geen gepubliceerde bron.",
+        note_nl=(
+            "Voor deze punten bestaat geen betrouwbaar onderzoek naar het effect op conversie. We houden de schatting bewust klein."
+        ),
     ),
 }

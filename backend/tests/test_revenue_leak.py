@@ -99,9 +99,7 @@ def test_mobile_gap_not_measured_when_mobile_score_missing():
     report = calculate_revenue_leak(
         performance=performance,
         third_party=None,
-        tracking=None,
         checkout=None,
-        owned=None,
         cro_observations=[],
         rich_results=None,
         product_feeds=None,
@@ -139,9 +137,7 @@ def test_lcp_desktop_fallback_is_labelled_not_silent():
     report = calculate_revenue_leak(
         performance=performance,
         third_party=None,
-        tracking=None,
         checkout=None,
-        owned=None,
         cro_observations=[],
         rich_results=None,
         product_feeds=None,
@@ -170,9 +166,7 @@ def test_golden_barts_total_within_sane_share():
     report = calculate_revenue_leak(
         performance=_barts_performance(),
         third_party=ThirdPartyScripts(total_third_party_blocking_ms=1500, total_third_party_domains=22),
-        tracking=None,
         checkout=_barts_checkout(),
-        owned=None,
         cro_observations=_barts_cro_observations(),
         rich_results=None,
         product_feeds=None,
@@ -196,7 +190,7 @@ def test_operator_revenue_conflict_surfaced():
     sessions/CR/AOV fields. That must produce a visible, correctly-sized conflict —
     and the loss math must be based on the funnel number, not the revenue field."""
     report = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=None, owned=None,
+        performance=None, third_party=None, checkout=None,
         cro_observations=[], rich_results=None, product_feeds=None, accessibility=None,
         ad_traffic=None, **_BARTS_KWARGS,
     )
@@ -212,7 +206,7 @@ def test_ad_spend_conflict_surfaced():
     """€10k/mo ad spend on a €26.4k/mo funnel (38%) is a second, independent signal
     that the operator's inputs don't agree with each other."""
     report = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=None, owned=None,
+        performance=None, third_party=None, checkout=None,
         cro_observations=[], rich_results=None, product_feeds=None, accessibility=None,
         ad_traffic=None, **_BARTS_KWARGS,
     )
@@ -224,7 +218,7 @@ def test_no_conflict_when_revenue_is_the_only_input():
     sessions out of that same revenue figure — they trivially agree, so comparing
     them proves nothing and must not raise a conflict."""
     report = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=None, owned=None,
+        performance=None, third_party=None, checkout=None,
         cro_observations=[], rich_results=None, product_feeds=None, accessibility=None,
         ad_traffic=None, annual_revenue_eur=120_000,
     )
@@ -239,12 +233,12 @@ def test_address_form_counted_once_across_checkout_and_cro():
     (>12 fields observed_friction) and by the generic CRO scan (same threshold on
     the same field). It must be priced once, not twice."""
     with_cro = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=_barts_checkout(), owned=None,
+        performance=None, third_party=None, checkout=_barts_checkout(),
         cro_observations=_barts_cro_observations(), rich_results=None, product_feeds=None,
         accessibility=None, ad_traffic=None, **_BARTS_KWARGS,
     )
     without_cro = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=_barts_checkout(), owned=None,
+        performance=None, third_party=None, checkout=_barts_checkout(),
         cro_observations=[], rich_results=None, product_feeds=None,
         accessibility=None, ad_traffic=None, **_BARTS_KWARGS,
     )
@@ -266,7 +260,7 @@ def test_social_proof_collapses_across_pages_and_is_unpriced():
     not license pricing 'our scraper found no widget in server HTML', so this
     finding must carry no euro figure and contribute nothing to the layer total."""
     report = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=None, owned=None,
+        performance=None, third_party=None, checkout=None,
         cro_observations=_barts_cro_observations()[1:],  # the two social-proof observations
         rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
         **_BARTS_KWARGS,
@@ -306,9 +300,7 @@ def test_ceiling_never_silently_binds_on_realistic_bad_store():
     report = calculate_revenue_leak(
         performance=_barts_performance(),
         third_party=ThirdPartyScripts(total_third_party_blocking_ms=1500, total_third_party_domains=22),
-        tracking=None,
         checkout=_barts_checkout(),
-        owned=None,
         cro_observations=_barts_cro_observations(),
         rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
         **_BARTS_KWARGS,
@@ -363,7 +355,7 @@ def test_heuristic_fallback_when_no_inputs_available():
     """With no operator inputs and no SE Ranking data, the model must fall back to
     the default-store heuristic and label itself as such — never claim 'measured'."""
     report = calculate_revenue_leak(
-        performance=None, third_party=None, tracking=None, checkout=None, owned=None,
+        performance=None, third_party=None, checkout=None,
         cro_observations=[], rich_results=None, product_feeds=None, accessibility=None,
         ad_traffic=None,
     )
@@ -381,7 +373,7 @@ def test_layer4_adds_no_euros():
     report = calculate_revenue_leak(
         performance=_barts_performance(),
         third_party=ThirdPartyScripts(total_third_party_blocking_ms=1500, total_third_party_domains=22),
-        tracking=None, checkout=_barts_checkout(), owned=None,
+        checkout=_barts_checkout(),
         cro_observations=_barts_cro_observations(),
         rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
         **_BARTS_KWARGS,
@@ -413,14 +405,14 @@ def test_scale_invariance():
     # (a 200-session/mo store's ~€264 revenue would round every loss to exactly
     # zero and trivially "pass"; that isn't the invariant this test is checking).
     small = calculate_revenue_leak(
-        performance=_barts_performance(), third_party=None, tracking=None,
-        checkout=_barts_checkout(), owned=None, cro_observations=[],
+        performance=_barts_performance(), third_party=None,
+        checkout=_barts_checkout(), cro_observations=[],
         rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
         annual_revenue_eur=None, aov_override=66.0, sessions_override=20_000, cr_override_pct=2.0,
     )
     large = calculate_revenue_leak(
-        performance=_barts_performance(), third_party=None, tracking=None,
-        checkout=_barts_checkout(), owned=None, cro_observations=[],
+        performance=_barts_performance(), third_party=None,
+        checkout=_barts_checkout(), cro_observations=[],
         rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
         annual_revenue_eur=None, aov_override=66.0, sessions_override=200_000, cr_override_pct=2.0,
     )
@@ -436,7 +428,7 @@ def test_roi_range_and_negative_year_one_not_clamped():
     report = calculate_revenue_leak(
         performance=_barts_performance(),
         third_party=ThirdPartyScripts(total_third_party_blocking_ms=1500, total_third_party_domains=22),
-        tracking=None, checkout=_barts_checkout(), owned=None,
+        checkout=_barts_checkout(),
         cro_observations=_barts_cro_observations(),
         rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
         **_BARTS_KWARGS,
@@ -474,8 +466,8 @@ def test_good_signals_stay_revenue_kind_not_diagnostic():
     )
 
     report = calculate_revenue_leak(
-        performance=performance, third_party=None, tracking=None, checkout=checkout,
-        owned=None, cro_observations=[], rich_results=None, product_feeds=None,
+        performance=performance, third_party=None, checkout=checkout,
+        cro_observations=[], rich_results=None, product_feeds=None,
         accessibility=None, ad_traffic=None,
         annual_revenue_eur=1_200_000, aov_override=95.0, sessions_override=20_000,
         cr_override_pct=2.0,
@@ -611,30 +603,32 @@ def test_lcp_source_caveat_empty_for_field_data():
 
 # --- layer 1 cost/revenue kind separation ---------------------------------------------
 
-def test_ad_spend_evaporation_excluded_from_layer1_revenue_total():
-    """Ad-spend evaporation is `kind='cost'` (money already spent, not revenue lost)
-    but is registered inside layer 1, which is finalised as `kind='revenue'`.
-    `_finalize_layer` must filter on the metric's own kind, not just the layer's —
-    otherwise this cost figure is silently summed into the revenue-leak headline,
-    mixing 'you're losing this in sales' with 'you're burning this in ad spend'."""
+def test_ad_spend_on_bounced_clicks_excluded_from_layer1_revenue_total():
+    """Ad spend on clicks that bounce from slowness is `kind='cost'` (money already
+    spent, not revenue lost) but is registered inside layer 1, which is finalised as
+    `kind='revenue'`. `_finalize_layer` must filter on the metric's own kind, not just
+    the layer's — otherwise this cost figure is silently summed into the revenue-leak
+    headline, mixing 'you're losing this in sales' with 'you're burning this in ad
+    spend'."""
     performance = Performance(
         mobile=MobileCWV(lcp_ms=1200.0, inp_ms=100.0, cls=0.02),
         lighthouse=LighthouseScores(performance=95),
         tbt_ms=100.0,
     )
     ad_traffic = AdTrafficImpact(
-        est_post_click_bounce_pct=45.0,  # == baseline: no bounce finding
+        est_post_click_bounce_pct=60.0,  # 15pp over baseline...
         bounce_baseline_pct=45.0,
-        est_wasted_ad_spend_pct=20.0,
+        # ...but no revenue range, so no revenue-side bounce finding: layer 1's revenue
+        # total stays zero and only the cost metric carries a figure.
+        est_monthly_lost_revenue_eur_low=None,
+        est_monthly_lost_revenue_eur_high=None,
         data_source="heuristic",
     )
 
     report = calculate_revenue_leak(
         performance=performance,
         third_party=None,
-        tracking=None,
         checkout=None,
-        owned=None,
         cro_observations=[],
         rich_results=None,
         product_feeds=None,
@@ -659,3 +653,269 @@ def test_ad_spend_evaporation_excluded_from_layer1_revenue_total():
 
     # The cost figure must still show up somewhere: the report's cost line.
     assert report.cost_monthly_eur == pytest.approx(ad_metric.monthly_loss_eur)
+    # 15pp of excess bounce x the (benchmark) monthly ad spend, rounded like _r().
+    assert ad_metric.monthly_loss_eur == pytest.approx(
+        round(report.funnel.monthly_ad_spend_eur * 0.15 / 100) * 100
+    )
+
+
+def test_attribution_loss_is_not_priced_as_wasted_ad_spend():
+    """Tracking's attribution-loss estimate (what analytics can't see) used to be
+    priced as ad budget "evaporating before the page loads". With a fast page and no
+    excess bounce there is no slowness cost, whatever the attribution loss."""
+    ad_traffic = AdTrafficImpact.model_validate({
+        "est_post_click_bounce_pct": 45.0, "bounce_baseline_pct": 45.0,
+        "est_wasted_ad_spend_pct": 40.0,  # legacy key from a stored row
+        "data_source": "heuristic",
+    })
+    assert ad_traffic.est_attribution_loss_pct == 40.0
+
+    report = calculate_revenue_leak(
+        performance=Performance(mobile=MobileCWV(lcp_ms=1200.0), tbt_ms=100.0),
+        third_party=None, checkout=None, cro_observations=[],
+        rich_results=None, product_feeds=None, accessibility=None, ad_traffic=ad_traffic,
+        sessions_override=20_000, cr_override_pct=4.0, aov_override=120.0,
+    )
+    ad_metric = _metric(_layer(report, 1), "advertentiegeld")
+    assert ad_metric.monthly_loss_eur is None
+    assert ad_metric.status == "good"
+
+
+# --- flat findings list (single source of truth) -------------------------------------
+
+def _no_guest_checkout() -> CheckoutFlow:
+    return _barts_checkout().model_copy(update={"guest_checkout_available": False})
+
+
+def test_priced_findings_add_up_to_the_report_total():
+    report = calculate_revenue_leak(
+        performance=_barts_performance(), third_party=None, checkout=_no_guest_checkout(),
+        cro_observations=_barts_cro_observations(), rich_results=None, product_feeds=None,
+        accessibility=None, ad_traffic=None, **_BARTS_KWARGS,
+    )
+    priced = [f for f in report.findings if f.priced]
+    assert priced, "fixture must price something"
+    # Layer totals are rounded to €100 per layer; two revenue layers → within ±€100.
+    assert sum(f.monthly_low for f in priced) == pytest.approx(report.total_monthly_loss_eur_low, abs=100)
+    assert sum(f.monthly_high for f in priced) == pytest.approx(report.total_monthly_loss_eur_high, abs=100)
+
+
+def test_checkout_findings_keep_their_own_euros_and_citation():
+    """Layer 3 folds the checkout findings into one metric row; the flat list keeps
+    each one, with its own range, confidence and source."""
+    report = calculate_revenue_leak(
+        performance=None, third_party=None, checkout=_no_guest_checkout(),
+        cro_observations=[], rich_results=None, product_feeds=None, accessibility=None,
+        ad_traffic=None, **_BARTS_KWARGS,
+    )
+    by_id = {f.finding_id: f for f in report.findings}
+    assert {"checkout.no_guest", "checkout.address_fields"} <= set(by_id)
+    for fid in ("checkout.no_guest", "checkout.address_fields"):
+        f = by_id[fid]
+        assert f.priced and f.monthly_high > f.monthly_low > 0
+        assert f.citation == "BAYMARD_CHECKOUT_ABANDONMENT"
+        assert f.citation_verified is False
+        assert f.sources == ["checkout"]
+
+
+def test_unpriced_findings_are_listed_but_carry_no_euros():
+    report = calculate_revenue_leak(
+        performance=None, third_party=None, checkout=None,
+        cro_observations=_barts_cro_observations(), rich_results=None, product_feeds=None,
+        accessibility=None, ad_traffic=None, **_BARTS_KWARGS,
+    )
+    social = next(f for f in report.findings if f.finding_id == "cro.social_proof")
+    assert not social.priced and social.monthly_low is None and social.verify_manually
+
+
+# --- data provenance -------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({}, "heuristic"),
+        ({"aov_override": 80.0}, "partial"),  # one real input used to label it "measured"
+        ({"annual_revenue_eur": 1_200_000}, "partial"),
+        ({"sessions_override": 20_000}, "partial"),  # CR is still a benchmark
+        ({"sessions_override": 20_000, "cr_override_pct": 2.0}, "measured"),
+        ({"sessions_override": 20_000, "annual_revenue_eur": 1_200_000}, "measured"),  # CR derived
+    ],
+)
+def test_data_source_is_measured_only_when_sessions_and_cr_are(kwargs, expected):
+    funnel, _ = build_funnel_model(kwargs.pop("annual_revenue_eur", None), None, **kwargs)
+    assert funnel.data_source == expected
+
+
+def test_operator_mobile_share_scales_mobile_exposure():
+    common = dict(performance=_barts_performance(), third_party=None, checkout=None,
+                  cro_observations=[], rich_results=None, product_feeds=None,
+                  accessibility=None, ad_traffic=None, **_BARTS_KWARGS)
+    default = calculate_revenue_leak(**common)
+    half = calculate_revenue_leak(**common, mobile_share_override_pct=35.0)  # half the 70% default
+
+    lcp_default = next(f for f in default.findings if f.finding_id == "perf.lcp_mobile")
+    lcp_half = next(f for f in half.findings if f.finding_id == "perf.lcp_mobile")
+    assert lcp_half.exposure_share == pytest.approx(lcp_default.exposure_share / 2)
+    assert half.funnel.mobile_share_source == "operator"
+    assert default.funnel.mobile_share_source == "benchmark"
+
+
+def test_mobile_cr_that_needs_a_negative_desktop_cr_is_a_conflict():
+    # 2% overall with 80% mobile: a 3% mobile CR would need desktop at -2%.
+    _, conflicts = build_funnel_model(
+        None, None, sessions_override=20_000, cr_override_pct=2.0,
+        mobile_share_override_pct=80.0, mobile_cr_override_pct=3.0,
+    )
+    assert [c.kind for c in conflicts] == ["mobile_cr_vs_overall"]
+
+    _, plausible = build_funnel_model(
+        None, None, sessions_override=20_000, cr_override_pct=2.0,
+        mobile_share_override_pct=80.0, mobile_cr_override_pct=1.6,
+    )
+    assert plausible == []
+
+
+def test_express_pay_is_never_priced_by_the_absolute_model():
+    checkout = _barts_checkout().model_copy(update={"express_checkout_methods": []})
+    report = calculate_revenue_leak(
+        performance=None, third_party=None, checkout=checkout, cro_observations=[],
+        rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
+        **_BARTS_KWARGS,
+    )
+    express = next(f for f in report.findings if f.finding_id == "checkout.no_express_pay")
+    assert not express.priced and express.confidence == "low"
+
+
+# --- fase 5: conversion / catalog / channel findings --------------------------------
+
+def _leak(**kw):
+    base = dict(performance=None, third_party=None, checkout=None, cro_observations=[],
+                rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None)
+    return calculate_revenue_leak(**{**base, **kw}, **_BARTS_KWARGS)
+
+
+def test_missing_shipping_info_on_the_pdp_is_priced_and_adds_to_the_total():
+    from app.full_audit.schemas import ShippingHealth
+
+    without = _leak()
+    hidden = _leak(shipping=ShippingHealth(cost_info_on_pdp=False))
+    shown = _leak(shipping=ShippingHealth(cost_info_on_pdp=True, free_shipping_threshold_eur=50))
+    unknown = _leak(shipping=ShippingHealth(cost_info_on_pdp=None))  # no PDP scraped
+
+    f = next(f for f in hidden.findings if f.finding_id == "shipping.cost_clarity")
+    assert f.priced and f.stage == "add_to_cart" and f.citation == "BAYMARD_EXTRA_COSTS"
+    assert hidden.total_monthly_loss_eur_high > without.total_monthly_loss_eur_high
+    for report in (shown, unknown):
+        assert not any(x.finding_id == "shipping.cost_clarity" for x in report.findings)
+    layer3 = _layer(hidden, 3)
+    assert any(m.finding_id == "shipping.cost_clarity" for m in layer3.metrics)
+
+
+def test_social_proof_is_priced_only_when_a_product_page_showed_nothing():
+    pdp = [CroObservation(page="Product page (PDP)", observation="Geen reviews, sterren of vertrouwenssignalen gedetecteerd op de pdp.", severity="high")]
+    priced = next(f for f in _leak(cro_observations=pdp).findings if f.finding_id == "cro.social_proof")
+    assert priced.priced and priced.confidence == "medium" and not priced.verify_manually
+
+    unpriced = next(f for f in _leak(cro_observations=_barts_cro_observations()).findings if f.finding_id == "cro.social_proof")
+    assert not unpriced.priced and unpriced.verify_manually
+
+
+def test_catalog_channel_and_structured_data_findings_are_listed_without_euros():
+    from app.full_audit.schemas import (
+        OwnedChannels, ProductFeedHealth, RichResultsHealth, ShippingHealth, ShopifyCatalogHealth,
+    )
+
+    report = _leak(
+        checkout=_barts_checkout().model_copy(update={"cart_free_shipping_bar": False, "cart_cross_sell": False}),
+        shipping=ShippingHealth(cost_info_on_pdp=True, free_shipping_threshold_eur=50),
+        catalog=ShopifyCatalogHealth(product_count_sampled=100, out_of_stock_ratio_pct=35,
+                                     products_missing_images=4, products_missing_description=3),
+        owned=OwnedChannels(newsletter_signup_tested=False),
+        rich_results=RichResultsHealth(has_product_schema=True, has_aggregate_rating=False),
+        product_feeds=ProductFeedHealth(google_merchant_ready_estimate="not-ready", missing_fields=["gtin"]),
+    )
+    ids = {f.finding_id: f for f in report.findings}
+    expected = {"cart.no_free_shipping_bar", "cart.no_cross_sell", "catalog.out_of_stock",
+                "catalog.missing_content", "owned.no_email_capture", "seo.rich_results", "feed.merchant_ready"}
+    assert expected <= set(ids)
+    assert all(not ids[i].priced and ids[i].verify_manually for i in expected)
+    # They reach the client as actions even without euros.
+    assert {"catalog.stock", "catalog.content", "owned.email_capture", "feed.merchant"} <= {a.action_key for a in report.actions}
+    # Structured data / feeds are already metrics in layer 5 — no duplicate row there.
+    assert not any(m.finding_id == "seo.rich_results" for m in _layer(report, 5).metrics)
+
+
+def test_mobile_gap_needs_the_operators_mobile_cr():
+    gap = calculate_revenue_leak(
+        performance=None, third_party=None, checkout=None, cro_observations=[], rich_results=None,
+        product_feeds=None, accessibility=None, ad_traffic=None,
+        sessions_override=20_000, cr_override_pct=2.0, aov_override=66.0,
+        mobile_share_override_pct=70.0, mobile_cr_override_pct=1.2,  # desktop ≈ 3.87%
+    )
+    assert any(f.finding_id == "perf.mobile_gap" and not f.priced for f in gap.findings)
+    assert not any(f.finding_id == "perf.mobile_gap" for f in _leak().findings)
+
+
+# --- finding-verifier verdicts --------------------------------------------------------
+
+def _barts_report(verdicts=None) -> RevenueLeakReport:
+    return calculate_revenue_leak(
+        performance=_barts_performance(),
+        third_party=ThirdPartyScripts(total_third_party_blocking_ms=1500, total_third_party_domains=22),
+        checkout=_barts_checkout(),
+        cro_observations=_barts_cro_observations(),
+        rich_results=None,
+        product_feeds=None,
+        accessibility=None,
+        ad_traffic=None,
+        verdicts=verdicts,
+        **_BARTS_KWARGS,
+    )
+
+
+def test_no_verdicts_and_all_confirmed_leave_the_report_unchanged():
+    base = _barts_report()
+    confirmed = _barts_report({f.finding_id: "confirmed" for f in base.findings})
+    assert _barts_report({}).model_dump() == base.model_dump()
+    assert confirmed.model_dump() == base.model_dump()
+
+
+def test_refuted_finding_disappears_and_total_drops():
+    base = _barts_report()
+    target = max((f for f in base.findings if f.priced), key=lambda f: f.monthly_high or 0)
+
+    checked = _barts_report({target.finding_id: "refuted"})
+
+    assert target.finding_id not in {f.finding_id for f in checked.findings}
+    assert checked.total_monthly_loss_eur_high < base.total_monthly_loss_eur_high
+
+
+def test_unverifiable_finding_stays_but_is_unpriced():
+    base = _barts_report()
+    target = next(f for f in base.findings if f.priced)
+
+    checked = _barts_report({target.finding_id: "unverifiable"})
+
+    (kept,) = [f for f in checked.findings if f.finding_id == target.finding_id]
+    assert kept.priced is False and kept.monthly_low is None and kept.verify_manually is True
+    assert checked.total_monthly_loss_eur_high < base.total_monthly_loss_eur_high
+
+
+def test_verdict_for_unknown_finding_is_ignored():
+    assert _barts_report({"perf.does_not_exist": "refuted"}).model_dump() == _barts_report().model_dump()
+
+
+def test_refuted_layer3_extra_finding_drops_its_row():
+    from app.full_audit.schemas import ShippingHealth
+
+    def report(verdicts=None):
+        return calculate_revenue_leak(
+            performance=_barts_performance(), third_party=None, checkout=None, cro_observations=[],
+            rich_results=None, product_feeds=None, accessibility=None, ad_traffic=None,
+            shipping=ShippingHealth(cost_info_on_pdp=False), verdicts=verdicts, **_BARTS_KWARGS,
+        )
+
+    assert "shipping.cost_clarity" in {f.finding_id for f in report().findings}
+    checked = report({"shipping.cost_clarity": "refuted"})
+    assert "shipping.cost_clarity" not in {f.finding_id for f in checked.findings}
+    assert not any(m.finding_id == "shipping.cost_clarity" for l in checked.layers for m in l.metrics)

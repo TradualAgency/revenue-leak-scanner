@@ -23,6 +23,7 @@ import type {
   LayerScore,
   MetricComparison,
 } from "~/lib/types";
+import { BOOK_A_CALL_URL } from "~/lib/links";
 
 const POLL_INTERVAL = 3000;
 
@@ -198,20 +199,40 @@ function LayerScoreCards({ layerScores }: { layerScores: LayerScore[] }) {
   );
 }
 
-function GapMetricRow({ g }: { g: GapFinding }) {
+const GAP_CONFIDENCE_NL = { high: "hoge zekerheid", medium: "redelijke zekerheid", low: "lage zekerheid" } as const;
+
+function GapMetricRow({ g, comparison }: { g: GapFinding; comparison?: MetricComparison }) {
   const hasEur = g.gap_to_median_eur_low != null && g.gap_to_median_eur_high != null;
+  const hasBest = g.gap_to_best_eur_high != null && g.gap_to_best_eur_high > 0;
   return (
     <div className="flex gap-3 py-2.5 border-b border-gray-100 last:border-0">
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-gray-700">{g.label_nl}</p>
+        {comparison && comparison.store_measured && (
+          <p className="text-[11px] text-gray-500 mt-0.5 tabular-nums">
+            Jij {formatMetricValue(comparison.store_value, comparison.unit)} · mediaan{" "}
+            {formatMetricValue(comparison.median, comparison.unit)} · beste {formatMetricValue(comparison.best, comparison.unit)}
+            {comparison.store_rank != null && comparison.domains_ranked != null && (
+              <> · plek {comparison.store_rank} van {comparison.domains_ranked}</>
+            )}
+          </p>
+        )}
         {g.note_nl && <p className="text-[11px] text-gray-500 mt-0.5">{g.note_nl}</p>}
+        {hasEur && (
+          <p className="text-[10px] text-gray-500 mt-0.5">{GAP_CONFIDENCE_NL[g.confidence]}</p>
+        )}
         {g.market_is_also_below_benchmark && (
           <p className="text-[10px] text-amber-600 mt-0.5">Ook je markt zit onder de algemene norm — dit is het gat tot wat er al aantoonbaar haalbaar is.</p>
         )}
       </div>
       <div className="text-right flex-shrink-0">
         {hasEur ? (
-          <p className="text-sm font-bold tabular-nums text-[#EF4444]">{eurRange(g.gap_to_median_eur_low, g.gap_to_median_eur_high)}</p>
+          <>
+            <p className="text-sm font-bold tabular-nums text-[#EF4444]">{eurRange(g.gap_to_median_eur_low, g.gap_to_median_eur_high)}</p>
+            {hasBest && (
+              <p className="text-[10px] text-gray-500 tabular-nums">tot de beste: {eurRange(g.gap_to_best_eur_low, g.gap_to_best_eur_high)}</p>
+            )}
+          </>
         ) : (
           <p className="text-[10px] text-gray-400 italic">diagnose</p>
         )}
@@ -261,7 +282,7 @@ function Cta() {
         Dit gat is niet abstract: het is wat concurrenten in jouw eigen markt vandaag al leveren.
       </p>
       <a
-        href="https://tradual.com/contact"
+        href={BOOK_A_CALL_URL}
         className="inline-block bg-tradual-accent text-tradual-primary px-8 py-3 font-medium hover:opacity-90 transition"
       >
         Plan een strategiegesprek
@@ -347,6 +368,7 @@ export default function MarktvergelijkingPage() {
   const priceableGaps = data.gaps.filter((g) => g.kind === "revenue");
   const diagnosticGaps = data.gaps.filter((g) => g.kind === "diagnostic");
   const lcpGap = data.gaps.find((g) => g.finding_id === "gap.lcp_mobile");
+  const comparisonsByKey = Object.fromEntries(data.comparisons.map((c) => [c.key, c]));
   const marketBelowBenchmark = data.market_is_also_below_benchmark || (lcpGap?.market_is_also_below_benchmark ?? false);
 
   return (
@@ -362,6 +384,13 @@ export default function MarktvergelijkingPage() {
           <p className="text-sm text-gray-500">Marktvergelijking</p>
           <HeroGap data={data} />
         </div>
+
+        {data.narrative_nl && (
+          <ReportCard className="p-5">
+            <SectionLabel className="mb-2">In het kort</SectionLabel>
+            <p className="text-sm text-gray-800 leading-relaxed">{data.narrative_nl}</p>
+          </ReportCard>
+        )}
 
         {marketBelowBenchmark && <MarketBelowBenchmarkNotice />}
 
@@ -381,7 +410,7 @@ export default function MarktvergelijkingPage() {
             <SectionLabel>Geprijsde gaten t.o.v. je markt</SectionLabel>
             <ReportCard className="px-5 py-2">
               {priceableGaps.map((g) => (
-                <GapMetricRow key={g.finding_id} g={g} />
+                <GapMetricRow key={g.finding_id} g={g} comparison={g.metric_key ? comparisonsByKey[g.metric_key] : undefined} />
               ))}
             </ReportCard>
           </div>
@@ -392,7 +421,7 @@ export default function MarktvergelijkingPage() {
             <SectionLabel>Te verifiëren signalen</SectionLabel>
             <ReportCard className="px-5 py-2">
               {diagnosticGaps.map((g) => (
-                <GapMetricRow key={g.finding_id} g={g} />
+                <GapMetricRow key={g.finding_id} g={g} comparison={g.metric_key ? comparisonsByKey[g.metric_key] : undefined} />
               ))}
             </ReportCard>
           </div>

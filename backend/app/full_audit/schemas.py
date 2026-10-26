@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
+
+from app.agents.verifier.schemas import VerificationReport
 
 ScanLevel = Literal["outside-only", "semi", "full-access"]
 AuditStatus = Literal["queued", "processing", "ready_for_review", "failed"]
@@ -27,6 +29,10 @@ MetaCapiStatus = Literal["detected", "browser-only", "absent"]
 AttributionLossRisk = Literal["low", "medium", "high"]
 MerchantReadyEstimate = Literal["ready", "partial", "not-ready"]
 WwwRedirectStatus = Literal["www-to-apex", "apex-to-www", "inconsistent"]
+# "measured": sessions AND conversion rate both come from real data (operator input,
+# SE Ranking, or revenue/sessions arithmetic). "partial": at least one real input, but
+# the funnel still leans on a benchmark for sessions or CR. "heuristic": none at all.
+DataSource = Literal["measured", "partial", "heuristic"]
 
 
 class PlatformArchitecture(BaseModel):
@@ -147,6 +153,10 @@ class CheckoutFlow(BaseModel):
     observed_friction: list[ObservedFriction] = []
     post_purchase_observations: str | None = None
     notes: str | None = None
+    # Seen in the cart page's server HTML after the probe's add-to-cart. Cart drawers
+    # and upsell apps often render client-side, so False means "not in the HTML".
+    cart_free_shipping_bar: bool | None = None
+    cart_cross_sell: bool | None = None
 
 
 class OwnedChannels(BaseModel):
@@ -222,8 +232,14 @@ class RoadmapPhase(BaseModel):
     objective: str
     actions: list[str] = []
     expected_outcome: str
+    # Legacy: an LLM-invented euro figure, no longer requested or shown. Old rows parse.
     est_monthly_revenue_impact_eur: float | None = None
     dependencies: list[str] = []
+    # The registry findings this phase resolves (chosen by the LLM from an allowlist);
+    # the euro range is summed from those findings in code, never written by the LLM.
+    finding_ids: list[str] = []
+    est_monthly_impact_eur_low: float | None = None
+    est_monthly_impact_eur_high: float | None = None
 
 
 class StrategicRoadmap(BaseModel):
@@ -286,10 +302,16 @@ class AdTrafficImpact(BaseModel):
     est_drop_off_per_1000_clicks: int | None = None
     est_monthly_lost_revenue_eur_low: float | None = None
     est_monthly_lost_revenue_eur_high: float | None = None
-    est_wasted_ad_spend_pct: float | None = None
+    # Tracking's attribution-loss estimate, carried for context. It used to be stored
+    # as `est_wasted_ad_spend_pct` and priced as ad budget "evaporating before the page
+    # loads" — a measurement gap is not money lost to slowness. Old rows still parse.
+    est_attribution_loss_pct: float | None = Field(
+        default=None,
+        validation_alias=AliasChoices("est_attribution_loss_pct", "est_wasted_ad_spend_pct"),
+    )
     bounce_drivers: list[str] = []
     methodology_note: str | None = None
-    data_source: Literal["measured", "heuristic"] = "heuristic"
+    data_source: DataSource = "heuristic"
 
 
 MetricStatus = Literal["good", "warning", "critical", "not-measured"]
@@ -329,12 +351,16 @@ class FunnelModel(BaseModel):
     aov_source: InputSource = "benchmark"
     ad_spend_source: InputSource = "benchmark"
     operator_monthly_revenue_eur: float | None = None  # context only, never used for loss math
-    data_source: Literal["measured", "heuristic"] = "heuristic"
+    data_source: DataSource = "heuristic"
     methodology_note: str | None = None
+    mobile_share_source: InputSource = "benchmark"
+    # Operator-supplied mobile conversion rate (fraction). Context only for now: used
+    # to flag an impossible mobile/overall CR combination, not yet priced.
+    mobile_conversion_rate: float | None = None
 
 
 class DataConflict(BaseModel):
-    kind: Literal["revenue_vs_funnel", "ad_spend_vs_revenue"]
+    kind: Literal["revenue_vs_funnel", "ad_spend_vs_revenue", "mobile_cr_vs_overall"]
     operator_value_eur: float
     model_value_eur: float
     ratio: float
@@ -345,6 +371,12 @@ class DataConflict(BaseModel):
 class ModelWarning(BaseModel):
     kind: Literal["stage_ceiling_bound", "global_ceiling_bound", "duplicate_finding", "negative_payback"]
     detail: str
+
+
+# Warnings about the sales proposal rather than the measurement ("the Stack Rebuild
+# doesn't pay back within year 1") — operator dashboard only, never client output or
+# LLM input whose text ends up in client output.
+INTERNAL_WARNING_KINDS = frozenset({"negative_payback"})
 
 
 class RevenueLeakMetric(BaseModel):
@@ -427,6 +459,53 @@ class RevenueLeakLayer(BaseModel):
     unpriced_finding_count: int = 0
 
 
+class FindingOut(BaseModel):
+    """One registry finding, flat — the single source every euro in the report is
+    summed from. Layers/metrics are a presentation of these; actions, the roadmap
+    and the free scan read this list directly."""
+    finding_id: str
+    owning_layer: int
+    stage: FunnelStage | None = None
+    kind: MetricKind = "revenue"
+    priority: Literal["critical", "high", "medium", "low"] = "medium"
+    status: MetricStatus = "warning"
+    metric: str
+    signal: str | None = None
+    monthly_low: float | None = None
+    monthly_high: float | None = None
+    priced: bool = False
+    confidence: Confidence = "medium"
+    citation: str | None = None
+    citation_verified: bool | None = None
+    exposure_share: float | None = None
+    uplift_low: float | None = None
+    uplift_high: float | None = None
+    pages_affected: list[str] = []
+    sources: list[str] = []
+    verify_manually: bool = False
+
+
+class ActionItem(BaseModel):
+    """One thing to do, from analyzers/actions.py — effort and owner are a fixed table,
+    euros are the sum of the priced findings it resolves."""
+    action_key: str
+    title_nl: str
+    what_to_do_nl: str
+    effort: Literal["S", "M", "L"]
+    effort_days_low: float
+    effort_days_high: float
+    owner: str
+    remeasure_metric: str
+    remeasure_after_days: int
+    finding_ids: list[str] = []
+    monthly_low: float | None = None
+    monthly_high: float | None = None
+    priced: bool = False
+    confidence: Confidence = "medium"
+    verify_manually: bool = False
+    priority: Literal["critical", "high", "medium", "low"] = "medium"
+
+
 class RevenueLeakReport(BaseModel):
     layers: list[RevenueLeakLayer] = []
     total_monthly_loss_eur: float | None = None
@@ -438,7 +517,7 @@ class RevenueLeakReport(BaseModel):
     methodology_note: str | None = None
     ceo_triggers: list[CeoTriggerKpi] = []
     roi: RoiCalculation | None = None
-    data_source: Literal["measured", "heuristic"] = "heuristic"
+    data_source: DataSource = "heuristic"
     # --- funnel-model additions — all optional; absent/None means a pre-rewrite (v1)
     # report, which the frontend renders via the legacy path ---
     funnel: FunnelModel | None = None
@@ -452,6 +531,11 @@ class RevenueLeakReport(BaseModel):
     leak_share_of_revenue_low: float | None = None
     leak_share_of_revenue_high: float | None = None
     model_version: str | None = None  # None == pre-rewrite report; new reports set "2.0"
+    findings: list[FindingOut] = []  # empty on reports stored before this field existed
+    actions: list[ActionItem] = []
+    # Finding-verifier verdicts (app/agents/verifier). Operator-only: stripped from the
+    # client projection. None == not verified (disabled, failed or pre-verifier report).
+    verification: VerificationReport | None = None
 
 
 class ShopifyMigrationInsight(BaseModel):
@@ -623,6 +707,11 @@ class ShippingHealth(BaseModel):
     providers_detected: list[str] = []
     detected_vendors: list[VendorDetection] = []
     evidence: str | None = None
+    # Does a product page say what shipping costs (or from when it's free)? None when no
+    # product page was scraped — then there's nothing to judge.
+    cost_info_on_pdp: bool | None = None
+    free_shipping_threshold_eur: float | None = None
+    cost_info_evidence: str | None = None
 
 
 class ReturnsHealth(BaseModel):
@@ -670,6 +759,8 @@ class FullAuditData(BaseModel):
     monthly_sessions: int | None = None
     conversion_rate_pct: float | None = None
     monthly_ad_spend_eur: float | None = None
+    mobile_share_pct: float | None = None
+    mobile_conversion_rate_pct: float | None = None
     intro: str | None = None
     core_thesis: str | None = None
     audit_summary: str | None = None
@@ -705,6 +796,8 @@ class FullAuditData(BaseModel):
     competitor_benchmark: CompetitorBenchmarkReport | None = None
     ai_analysis: AiAnalysis | None = None
     sanity_export: dict | None = None
+    # Steps that raised and were skipped ("revenue_leak: KeyError: ..."). Operator-only.
+    pipeline_warnings: list[str] = []
 
 
 class FullAuditRequest(BaseModel):
@@ -722,6 +815,8 @@ class FullAuditRequest(BaseModel):
     monthly_sessions: int | None = None
     conversion_rate_pct: float | None = None
     monthly_ad_spend_eur: float | None = None
+    mobile_share_pct: float | None = None
+    mobile_conversion_rate_pct: float | None = None
 
 
 class FullAuditCreateResponse(BaseModel):
@@ -755,3 +850,70 @@ class FullAuditResponse(BaseModel):
     error_message: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# --- Client-facing projection (client_report.py) ------------------------------------
+# `FullAuditData` is the operator's working file: contact details, sales pitch copy,
+# Stack Rebuild pricing, the Sanity export. What a prospect sees is a projection of it,
+# built by an allowlist rather than by stripping fields, so a new internal field can't
+# leak just because nobody remembered to delete it here.
+
+
+class ClientCeoTrigger(BaseModel):
+    category: str
+    kpi: str
+    what_ceo_sees: str
+    benchmark: str | None = None
+    real_meaning: str
+    triggered: bool = False
+
+
+class ClientRevenueLeakReport(RevenueLeakReport):
+    ceo_triggers: list[ClientCeoTrigger] = []  # type: ignore[assignment]
+    # ROI is priced against the Stack Rebuild fee — sales material, never client output.
+    roi: RoiCalculation | None = Field(default=None, exclude=True)
+    # Finding-verifier verdicts and evidence are operator-only.
+    verification: VerificationReport | None = Field(default=None, exclude=True)
+
+
+class ClientSeRankingTraffic(BaseModel):
+    monthly_organic_sessions: int = 0
+    monthly_paid_sessions: int = 0
+
+
+class ClientAssumption(BaseModel):
+    """One funnel input and where it came from — what the euros are scaled by."""
+    key: str
+    label_nl: str
+    value: float
+    unit: Literal["eur", "pct", "count"]
+    source: InputSource
+    explanation_nl: str
+
+
+class ClientCitation(BaseModel):
+    key: str
+    source: str
+    figure_nl: str
+    note_nl: str
+    verified: bool
+
+
+class ClientReportContent(BaseModel):
+    """Everything a client may see of an audit. The web report and the Sanity export
+    are both built from this, so the two can't drift apart or leak differently."""
+    revenue_leak: ClientRevenueLeakReport | None = None
+    ad_traffic_impact: AdTrafficImpact | None = None
+    seranking_traffic: ClientSeRankingTraffic | None = None
+    roadmap: StrategicRoadmap | None = None
+    assumptions: list[ClientAssumption] = []
+    citations: list[ClientCitation] = []
+    methodology_note: str | None = None
+
+
+class ClientAuditReport(ClientReportContent):
+    id: uuid.UUID
+    status: AuditStatus
+    store_url: str
+    company_name: str | None = None
+    completed_at: datetime | None = None

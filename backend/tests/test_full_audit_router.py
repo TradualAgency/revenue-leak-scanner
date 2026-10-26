@@ -269,3 +269,52 @@ async def two_run_audit(db_session):
     db_session.add_all([older, newer])
     await db_session.commit()
     return audit, older, newer
+
+
+# --- the operator working file vs. the client projection ------------------------------
+
+_INTERNAL_MARKERS = ("tradual_pitch", "tradual_solution", "alarm_signal", "stack_rebuild",
+                     "contact_email", "ceo@", "sanity_export", "page-password")
+
+
+def _audit_data_with_internals() -> dict:
+    from tests.test_client_report import _audit_data
+
+    data = _audit_data().model_dump(mode="json")
+    data["sanity_export"] = {"password": "page-password"}
+    return data
+
+
+async def test_the_full_audit_working_file_needs_the_operator_key(client, db_session):
+    audit = await _add_audit(db_session, audit_data=_audit_data_with_internals())
+
+    assert (await client.get(f"/api/v1/full-audit/{audit.id}")).status_code == 403
+    assert (await client.get(f"/api/v1/full-audit/{audit.id}", headers={"X-Operator-Key": "wrong"})).status_code == 403
+
+    resp = await client.get(f"/api/v1/full-audit/{audit.id}", headers=OPERATOR)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["revenue_leak"]["roi"] is not None
+    assert "page-password" not in resp.text  # still only on /sanity-export
+
+
+async def test_the_client_report_is_public_and_carries_nothing_internal(client, db_session):
+    audit = await _add_audit(db_session, company_name="Store BV", audit_data=_audit_data_with_internals())
+
+    resp = await client.get(f"/api/v1/full-audit/{audit.id}/report")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["company_name"] == "Store BV"
+    assert body["revenue_leak"]["layers"]
+    for marker in _INTERNAL_MARKERS:
+        assert marker not in resp.text, marker
+
+
+async def test_the_client_report_of_an_unfinished_audit_has_no_data(client, db_session):
+    audit = await _add_audit(db_session, status="processing")
+    resp = await client.get(f"/api/v1/full-audit/{audit.id}/report")
+    assert resp.status_code == 200
+    assert resp.json()["revenue_leak"] is None
+
+
+async def test_the_client_report_of_an_unknown_audit_is_404(client):
+    assert (await client.get(f"/api/v1/full-audit/{uuid.uuid4()}/report")).status_code == 404

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.verifier.service import admin_client_for, run_verifier
 from app.analysis.scraper import scrape_store
 from app.database import AsyncSessionLocal
 from app.full_audit.analyzers.accessibility import make_accessibility_report
@@ -268,9 +269,12 @@ def _synthesize(
         "est_performance_lift_percent": lift_pct,
         "audit_summary": audit_summary,
         "methodology_note": (
-            "Automated outside-only scan. Alle bevindingen zijn gebaseerd op publiek toegankelijke signalen: "
-            "HTTP headers, DOM analyse, PageSpeed Insights API, en third-party script catalogus. "
-            "Geen admin-toegang gebruikt."
+            "Geautomatiseerde outside-only scan zonder admin-toegang. Bronnen: HTTP-headers en "
+            "DOM-analyse van publieke pagina's, DNS-records, Google PageSpeed Insights (CrUX-velddata "
+            "waar beschikbaar, anders labmeting), een catalogus van third-party scripts, een "
+            "checkout-probe (bij Shopify: één product in een testwinkelwagen, geen bestelling), "
+            "verkeersschattingen van SE Ranking, concurrentie-data van DataForSEO, en "
+            "Claude (Anthropic) voor de tekstuele analyse."
         ),
     }
 
@@ -288,6 +292,11 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
             scrape_result = await scrape_store(store_url)
             pages = scrape_result["pages"]
             if not pages:
+                if scrape_result.get("blocked_reason"):
+                    raise RuntimeError(
+                        f"De winkel blokkeerde de scan ({scrape_result['blocked_reason']}): we kregen "
+                        "een foutpagina of botbeveiliging terug in plaats van de homepage."
+                    )
                 raise RuntimeError(f"Could not scrape {store_url} — site unreachable or blocked")
 
             # 2. Run analyzers in parallel — return_exceptions=True so one failure doesn't abort
@@ -317,85 +326,128 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 return_exceptions=True,
             )
 
-            def _safe(val, default=None):
+            # Everything below degrades instead of failing the audit: a broken analyzer or
+            # rollup becomes None plus a line in `pipeline_warnings`, so the operator
+            # sees what's missing instead of losing the whole (paid-for) run.
+            pipeline_warnings: list[str] = []
+
+            def _record(step: str, exc: BaseException) -> None:
+                logger.warning("Full audit step %s failed for %s: %s", step, audit_id, exc)
+                pipeline_warnings.append(f"{step}: {type(exc).__name__}: {exc}"[:300])
+
+            analyzer_names = [
+                "platform", "performance", "third_party", "tracking", "checkout", "owned_channels",
+                "seo", "security", "dns_email", "domain_health", "rich_results",
+                "server_side_tracking", "product_feeds", "site_search", "shipping", "returns",
+                "multi_region", "marketplaces", "shopify_catalog", "shopify_apps", "retention",
+                "eu_compliance",
+            ]
+
+            def _safe(index: int, default=None):
+                val = results[index]
                 if isinstance(val, BaseException):
-                    logger.warning("Analyzer exception: %s", val)
+                    _record(analyzer_names[index], val)
                     return default
                 return val
 
-            platform = _safe(results[0])
-            performance_result = _safe(results[1])
+            def _step(step: str, fn, *args, default=None, **kwargs):
+                try:
+                    return fn(*args, **kwargs)
+                except Exception as exc:
+                    _record(step, exc)
+                    return default
+
+            async def _astep(step: str, coro, default=None):
+                try:
+                    return await coro
+                except Exception as exc:
+                    _record(step, exc)
+                    return default
+
+            platform = _safe(0)
+            performance_result = _safe(1)
             if performance_result is not None:
                 performance, psi_third_party_summary = performance_result
             else:
                 performance, psi_third_party_summary = None, {}
-            third_party = _safe(results[2])
-            third_party = apply_psi_third_party_measurements(third_party, psi_third_party_summary)
-            tracking = _safe(results[3])
-            checkout = _safe(results[4])
-            owned = _safe(results[5])
-            seo = _safe(results[6])
-            security = _safe(results[7])
-            dns_email = _safe(results[8])
-            domain_health = _safe(results[9])
-            rich_results = _safe(results[10])
-            server_side_tracking = _safe(results[11])
-            product_feeds = _safe(results[12])
-            site_search = _safe(results[13])
-            shipping = _safe(results[14])
-            returns = _safe(results[15])
-            multi_region = _safe(results[16])
-            marketplaces = _safe(results[17])
-            shopify_catalog = _safe(results[18])
-            shopify_apps = _safe(results[19])
-            retention = _safe(results[20])
-            eu_compliance = _safe(results[21])
+            third_party = _safe(2)
+            third_party = _step(
+                "third_party_psi_overlay", apply_psi_third_party_measurements,
+                third_party, psi_third_party_summary, default=third_party,
+            )
+            tracking = _safe(3)
+            checkout = _safe(4)
+            owned = _safe(5)
+            seo = _safe(6)
+            security = _safe(7)
+            dns_email = _safe(8)
+            domain_health = _safe(9)
+            rich_results = _safe(10)
+            server_side_tracking = _safe(11)
+            product_feeds = _safe(12)
+            site_search = _safe(13)
+            shipping = _safe(14)
+            returns = _safe(15)
+            multi_region = _safe(16)
+            marketplaces = _safe(17)
+            shopify_catalog = _safe(18)
+            shopify_apps = _safe(19)
+            retention = _safe(20)
+            eu_compliance = _safe(21)
 
             # 3. Rollups (synchronous, depend on parallel results)
-            cost = build_cost_analysis(third_party, platform)
-            bloat = build_bloat_list(third_party, cost)
-            cro_obs = make_cro_observations(pages, performance, checkout, rich_results)
-            accessibility = make_accessibility_report(pages, performance)
+            cost = _step("cost_analysis", build_cost_analysis, third_party, platform)
+            bloat = _step("bloat", build_bloat_list, third_party, cost, default=[])
+            cro_obs = _step("cro_observations", make_cro_observations, pages, performance, checkout, rich_results, default=[])
+            accessibility = _step("accessibility", make_accessibility_report, pages, performance)
             annual_rev = audit.estimated_annual_revenue_eur
 
-            # SE Ranking traffic lookup — cached per audit row (30-day TTL)
-            from app.full_audit.schemas import SeRankingTraffic  # local import avoids circular
-            _cache_age_days = None
-            if audit.seranking_fetched_at:
-                _cache_age_days = (datetime.now(UTC) - audit.seranking_fetched_at).days
-            if audit.seranking_traffic_json and _cache_age_days is not None and _cache_age_days < 30:
-                seranking_traffic = SeRankingTraffic(**audit.seranking_traffic_json)
-                logger.info("SE Ranking cache hit for %s (%d days old)", store_url, _cache_age_days)
-            else:
-                seranking_traffic = await fetch_traffic_estimates(store_url)
-                if seranking_traffic is not None:
-                    async with AsyncSessionLocal() as _db:
-                        _row = await _db.get(FullAudit, audit.id)
-                        if _row:
-                            _row.seranking_traffic_json = seranking_traffic.model_dump(exclude={"raw_response"})
-                            _row.seranking_fetched_at = datetime.now(UTC)
-                            await _db.commit()
+            async def _load_seranking():
+                # SE Ranking traffic lookup — cached per audit row (30-day TTL)
+                from app.full_audit.schemas import SeRankingTraffic  # local import avoids circular
+                _cache_age_days = None
+                if audit.seranking_fetched_at:
+                    _cache_age_days = (datetime.now(UTC) - audit.seranking_fetched_at).days
+                if audit.seranking_traffic_json and _cache_age_days is not None and _cache_age_days < 30:
+                    seranking_traffic = SeRankingTraffic(**audit.seranking_traffic_json)
+                    logger.info("SE Ranking cache hit for %s (%d days old)", store_url, _cache_age_days)
+                else:
+                    seranking_traffic = await fetch_traffic_estimates(store_url)
+                    if seranking_traffic is not None:
+                        async with AsyncSessionLocal() as _db:
+                            _row = await _db.get(FullAudit, audit.id)
+                            if _row:
+                                _row.seranking_traffic_json = seranking_traffic.model_dump(exclude={"raw_response"})
+                                _row.seranking_fetched_at = datetime.now(UTC)
+                                await _db.commit()
+                return seranking_traffic
 
-            # Competitor benchmark via DataForSEO — cached per audit row (30-day TTL).
-            # Real per-call cost, so this is cached even more conservatively than SE Ranking.
-            from app.full_audit.schemas import CompetitorBenchmarkReport  # local import avoids circular
-            _comp_cache_age_days = None
-            if audit.competitor_benchmark_fetched_at:
-                _comp_cache_age_days = (datetime.now(UTC) - audit.competitor_benchmark_fetched_at).days
-            if audit.competitor_benchmark_json and _comp_cache_age_days is not None and _comp_cache_age_days < 30:
-                competitor_benchmark = CompetitorBenchmarkReport(**audit.competitor_benchmark_json)
-                logger.info("Competitor benchmark cache hit for %s (%d days old)", store_url, _comp_cache_age_days)
-            else:
-                competitor_benchmark = await fetch_competitor_benchmark(store_url, pages)
-                if competitor_benchmark is not None:
-                    async with AsyncSessionLocal() as _db:
-                        _row = await _db.get(FullAudit, audit.id)
-                        if _row:
-                            _row.competitor_benchmark_json = competitor_benchmark.model_dump(mode="json")
-                            _row.competitor_benchmark_fetched_at = datetime.now(UTC)
-                            await _db.commit()
+            async def _load_competitor_benchmark():
+                # Competitor benchmark via DataForSEO — cached per audit row (30-day TTL).
+                # Real per-call cost, so this is cached even more conservatively than SE Ranking.
+                from app.full_audit.schemas import CompetitorBenchmarkReport  # local import avoids circular
+                _comp_cache_age_days = None
+                if audit.competitor_benchmark_fetched_at:
+                    _comp_cache_age_days = (datetime.now(UTC) - audit.competitor_benchmark_fetched_at).days
+                if audit.competitor_benchmark_json and _comp_cache_age_days is not None and _comp_cache_age_days < 30:
+                    competitor_benchmark = CompetitorBenchmarkReport(**audit.competitor_benchmark_json)
+                    logger.info("Competitor benchmark cache hit for %s (%d days old)", store_url, _comp_cache_age_days)
+                else:
+                    competitor_benchmark = await fetch_competitor_benchmark(store_url, pages)
+                    if competitor_benchmark is not None:
+                        async with AsyncSessionLocal() as _db:
+                            _row = await _db.get(FullAudit, audit.id)
+                            if _row:
+                                _row.competitor_benchmark_json = competitor_benchmark.model_dump(mode="json")
+                                _row.competitor_benchmark_fetched_at = datetime.now(UTC)
+                                await _db.commit()
+                return competitor_benchmark
 
-            ad_traffic_impact = calculate_ad_traffic_impact(
+            seranking_traffic = await _astep("seranking", _load_seranking())
+            competitor_benchmark = await _astep("competitor_benchmark", _load_competitor_benchmark())
+
+            ad_traffic_impact = _step(
+                "ad_traffic_impact", calculate_ad_traffic_impact,
                 performance, third_party, tracking, server_side_tracking,
                 annual_revenue_eur=annual_rev,
                 traffic=seranking_traffic,
@@ -403,32 +455,46 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 sessions_override=audit.monthly_sessions,
                 cr_override_pct=audit.conversion_rate_pct,
                 ad_spend_override=audit.monthly_ad_spend_eur,
+                mobile_share_override_pct=audit.mobile_share_pct,
+                mobile_cr_override_pct=audit.mobile_conversion_rate_pct,
             )
-            revenue_leak = calculate_revenue_leak(
-                performance, third_party, tracking, checkout, owned,
-                cro_obs or [], rich_results, product_feeds, accessibility,
-                ad_traffic_impact,
-                annual_revenue_eur=annual_rev,
-                traffic=seranking_traffic,
-                aov_override=audit.aov_eur,
-                sessions_override=audit.monthly_sessions,
-                cr_override_pct=audit.conversion_rate_pct,
-                ad_spend_override=audit.monthly_ad_spend_eur,
-                cost=cost,
-            )
+            def _leak(verdicts: dict[str, str] | None = None):
+                return calculate_revenue_leak(
+                    performance, third_party, checkout,
+                    cro_obs or [], rich_results, product_feeds, accessibility,
+                    ad_traffic_impact,
+                    annual_revenue_eur=annual_rev,
+                    traffic=seranking_traffic,
+                    aov_override=audit.aov_eur,
+                    sessions_override=audit.monthly_sessions,
+                    cr_override_pct=audit.conversion_rate_pct,
+                    ad_spend_override=audit.monthly_ad_spend_eur,
+                    mobile_share_override_pct=audit.mobile_share_pct,
+                    mobile_cr_override_pct=audit.mobile_conversion_rate_pct,
+                    cost=cost,
+                    shipping=shipping,
+                    catalog=shopify_catalog,
+                    owned=owned,
+                    verdicts=verdicts,
+                )
+
+            revenue_leak = _step("revenue_leak", _leak)
 
             # 4. Top-level synthesis
             # Use the low bound for the headline claim in the core thesis — a sales
             # claim should be the conservative end of the range, not the midpoint.
-            _leak_for_thesis = (
-                (revenue_leak.total_monthly_loss_eur_low if revenue_leak.total_monthly_loss_eur_low is not None else revenue_leak.total_monthly_loss_eur)
-                if revenue_leak else None
-            )
-            synthesis = _synthesize(
-                performance, third_party, tracking, cost, platform, dns_email, rich_results, store_url,
-                revenue_leak_monthly_eur=_leak_for_thesis,
-                revenue_leak=revenue_leak,
-            )
+            def _synthesis(leak: RevenueLeakReport | None) -> dict:
+                leak_for_thesis = (
+                    (leak.total_monthly_loss_eur_low if leak.total_monthly_loss_eur_low is not None else leak.total_monthly_loss_eur)
+                    if leak else None
+                )
+                return _synthesize(
+                    performance, third_party, tracking, cost, platform, dns_email, rich_results, store_url,
+                    revenue_leak_monthly_eur=leak_for_thesis,
+                    revenue_leak=leak,
+                )
+
+            synthesis = _synthesis(revenue_leak)
 
             # 5. Build full data model
             detected_stack = DetectedStack(
@@ -450,6 +516,8 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 monthly_sessions=audit.monthly_sessions,
                 conversion_rate_pct=audit.conversion_rate_pct,
                 monthly_ad_spend_eur=audit.monthly_ad_spend_eur,
+                mobile_share_pct=audit.mobile_share_pct,
+                mobile_conversion_rate_pct=audit.mobile_conversion_rate_pct,
                 platform_architecture=platform,
                 performance=performance,
                 third_party_scripts=third_party,
@@ -476,14 +544,34 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 revenue_leak=revenue_leak,
                 seranking_traffic=seranking_traffic,
                 competitor_benchmark=competitor_benchmark,
+                pipeline_warnings=pipeline_warnings,
                 **synthesis,
             )
 
+            # 5b. Finding-verifier — an agent re-checks every priced finding on the live
+            # store; refuted/unverifiable verdicts re-run the (deterministic) leak model so
+            # everything downstream (summary, AI skills, Sanity) sees the checked euros.
+            verification = await _astep(
+                "verifier",
+                run_verifier(audit_data, admin=admin_client_for(audit.shopify_shop_domain, audit.shopify_admin_token_enc)),
+            )
+            if verification:
+                pipeline_warnings.extend(f"verifier: {err}"[:300] for err in verification.errors)
+            if verification and audit_data.revenue_leak:
+                verdicts = verification.verdict_map()
+                if any(v != "confirmed" for v in verdicts.values()):
+                    checked = _step("revenue_leak_verified", _leak, verdicts)
+                    if checked is not None:
+                        audit_data.revenue_leak = checked
+                        for field, value in _synthesis(checked).items():
+                            setattr(audit_data, field, value)
+                audit_data.revenue_leak.verification = verification
+
             # 6. AI top summary — keep deterministic synthesis as fallback
-            await enrich_top_summary(audit_data)
+            await _astep("ai_top_summary", enrich_top_summary(audit_data))
 
             # 7. AI skills — parallel Claude calls on the structured output
-            audit_data.ai_analysis = await run_ai_analysis(audit_data, pages=pages)
+            audit_data.ai_analysis = await _astep("ai_analysis", run_ai_analysis(audit_data, pages=pages))
             if audit_data.ai_analysis and audit_data.ai_analysis.cro:
                 audit_data.cro_observations.extend(audit_data.ai_analysis.cro.observations)
 
@@ -505,7 +593,10 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 )
 
             # 8. Sanity export — deterministic mapping + prose prose generation
-            audit_data.sanity_export = await build_sanity_export(audit_data)
+            audit_data.sanity_export = await _astep("sanity_export", build_sanity_export(audit_data))
+
+            # Pydantic copied the list at construction; pick up the AI/Sanity steps too.
+            audit_data.pipeline_warnings = list(pipeline_warnings)
 
             # 9. Persist
             result2 = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))

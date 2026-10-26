@@ -1,8 +1,6 @@
-import json
 import logging
 
-from bs4 import BeautifulSoup
-
+from app.full_audit.analyzers.jsonld import jsonld_nodes, node_types
 from app.full_audit.schemas import RichResultsHealth
 
 logger = logging.getLogger(__name__)
@@ -16,28 +14,13 @@ _RICH_TYPES = {
 
 def _parse_schemas(html: str) -> set[str]:
     found: set[str] = set()
-    try:
-        soup = BeautifulSoup(html, "lxml")
-        for tag in soup.find_all("script", type="application/ld+json"):
-            try:
-                raw = tag.string or tag.get_text()
-                data = json.loads(raw)
-                items = data.get("@graph", [data]) if isinstance(data, dict) else (data if isinstance(data, list) else [data])
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    t = item.get("@type", "")
-                    if isinstance(t, list):
-                        found.update(t)
-                    elif t:
-                        found.add(t)
-                    # AggregateRating nested under Product
-                    if isinstance(item.get("aggregateRating"), dict):
-                        found.add("AggregateRating")
-            except Exception:
-                pass
-    except Exception:
-        pass
+    for node in jsonld_nodes(html):
+        found |= node_types(node)
+        if isinstance(node.get("aggregateRating"), dict):  # rating without its own @type
+            found.add("AggregateRating")
+    # A ProductGroup is Google's Product-with-variants; it earns the same rich result.
+    if "ProductGroup" in found:
+        found.add("Product")
     return found
 
 
