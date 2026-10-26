@@ -254,3 +254,35 @@ async def test_fix_packages_never_reach_the_client_report(client, db_session, re
     await db_session.commit()
     report = await client.get(f"/api/v1/full-audit/{ready_audit.id}/report")
     assert report.status_code == 200 and marker not in report.text
+
+
+# --- manual verifier / funnel runs ----------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_manual_runs_ignore_the_automatic_switch_but_not_a_missing_api_key(monkeypatch):
+    from app.agents.funnel.service import walk_funnel
+    from app.agents.verifier.service import run_verifier
+
+    monkeypatch.setattr(settings, "VERIFIER_ENABLED", False)
+    monkeypatch.setattr(settings, "FUNNEL_AGENT_ENABLED", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+    data = _audit([_finding("perf.lcp_mobile", 100, 300)])
+
+    # Automatic (pipeline) runs respect the switch...
+    assert await run_verifier(data, client=FakeClient([])) is None
+    assert (await walk_funnel(uuid.uuid4(), STORE, [], client=FakeClient([]))).status == "skipped"
+    # ...a manual start doesn't, but still needs credentials.
+    assert await run_verifier(data, force=True) is None
+    assert (await walk_funnel(uuid.uuid4(), STORE, [], force=True)).status == "skipped"
+    client = FakeClient([_response(_tool_use("submit_verification", {"verdicts": [
+        {"finding_id": "perf.lcp_mobile", "verdict": "confirmed", "evidence_nl": "e", "reason_nl": "r"},
+    ]}))])
+    report = await run_verifier(data, client=client, force=True)
+    assert report.verdict_map() == {"perf.lcp_mobile": "confirmed"}
+
+
+def test_run_request_accepts_all_six_agents():
+    from app.fix_agents.schemas import FixAgentRunRequest
+
+    req = FixAgentRunRequest(agents=["speed_bloat", "tracking", "cro_pdp", "checkout_schema", "verifier", "funnel"])
+    assert len(req.agents) == 6

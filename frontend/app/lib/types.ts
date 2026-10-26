@@ -1158,11 +1158,15 @@ export interface FixPackage {
   warnings: string[];
 }
 
-export interface FixAgentRun {
+/** Every agent an operator can start per audit. Manual verifier/funnel runs only show
+ * findings; they never change the audit or the client report. */
+export type AgentRunName = FixAgentName | "verifier" | "funnel";
+
+export interface AgentRun {
   id: string;
-  agent: FixAgentName;
+  agent: AgentRunName;
   status: FixAgentRunStatus;
-  result: FixPackage | null;
+  result: FixPackage | VerificationReport | FunnelWalk | null;
   error_message: string | null;
   model: string | null;
   input_tokens: number | null;
@@ -1171,11 +1175,19 @@ export interface FixAgentRun {
   completed_at: string | null;
 }
 
+export interface FixAgentRun extends AgentRun {
+  agent: FixAgentName;
+  result: FixPackage | null;
+}
+
 export interface FixAgentRunsResponse {
   audit_id: string;
+  store_url: string | null;
+  company_name: string | null;
+  audit_status: string | null;
   has_admin_token: boolean;
   shopify_shop_domain: string | null;
-  runs: FixAgentRun[];
+  runs: AgentRun[];
 }
 
 export interface AdminTokenResponse {

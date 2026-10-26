@@ -9,7 +9,7 @@ import type {
   CompetitorRunListResponse,
   CompetitorSetUpdatePayload,
   CompetitorSetUpdateResponse,
-  FixAgentName,
+  AgentRunName,
   FixAgentRunsResponse,
   FullAuditCreateResponse,
   FullAuditListResponse,
@@ -217,7 +217,7 @@ export function listFixAgentRuns(auditId: string): Promise<FixAgentRunsResponse>
   return operatorRequest<FixAgentRunsResponse>(`/full-audit/${auditId}/fix-agents`);
 }
 
-export function startFixAgents(auditId: string, agents: FixAgentName[]): Promise<FixAgentRunsResponse> {
+export function startFixAgents(auditId: string, agents: AgentRunName[]): Promise<FixAgentRunsResponse> {
   return operatorRequest<FixAgentRunsResponse>(`/full-audit/${auditId}/fix-agents`, {
     method: "POST",
     body: JSON.stringify({ agents }),

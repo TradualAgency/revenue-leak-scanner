@@ -1,5 +1,6 @@
-"""Operator-only fix agents. Nothing here is reachable through the public `/report`
-projection, and the stored Admin token is never returned — only whether one exists."""
+"""Operator-only agent runs (fix agents, plus manual verifier and funnel runs). Nothing
+here is reachable through the public `/report` projection, and the stored Admin token
+is never returned — only whether one exists."""
 
 import uuid
 
@@ -106,6 +107,9 @@ async def list_fix_agent_runs(audit_id: uuid.UUID, db: AsyncSession = Depends(ge
 def _runs_response(audit: FullAudit, runs: list[FixAgentRun]) -> FixAgentRunsResponse:
     return FixAgentRunsResponse(
         audit_id=audit.id,
+        store_url=audit.store_url,
+        company_name=audit.company_name,
+        audit_status=audit.status,
         has_admin_token=bool(audit.shopify_admin_token_enc),
         shopify_shop_domain=audit.shopify_shop_domain,
         runs=[

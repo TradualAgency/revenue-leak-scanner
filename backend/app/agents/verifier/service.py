@@ -113,9 +113,11 @@ async def run_verifier(
     data: FullAuditData,
     admin: ShopifyAdminClient | None = None,
     client: anthropic.AsyncAnthropic | None = None,
+    force: bool = False,
 ) -> VerificationReport | None:
-    """None when disabled, unconfigured or there's nothing priced to check."""
-    if not settings.VERIFIER_ENABLED or (client is None and not settings.ANTHROPIC_API_KEY):
+    """None when disabled (unless `force`: a manual start from the operator UI),
+    unconfigured, or there's nothing priced to check."""
+    if (not settings.VERIFIER_ENABLED and not force) or (client is None and not settings.ANTHROPIC_API_KEY):
         return None
     groups = group_findings(verification_candidates(data))
     if not groups:

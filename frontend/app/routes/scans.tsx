@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import Footer from "~/components/Footer";
 import Header from "~/components/Header";
+import AgentsDropdown from "~/components/operator/AgentsDropdown";
 import OperatorGate from "~/components/operator/OperatorGate";
 import ReportCard from "~/components/report/ReportCard";
 import SectionLabel from "~/components/report/SectionLabel";
@@ -69,6 +70,7 @@ function ScansTable() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openAgents, setOpenAgents] = useState<string | null>(null);
 
   // Debounced so typing in the search box doesn't fire a request per keystroke.
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -154,7 +156,8 @@ function ScansTable() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {items.map((audit) => (
-                  <tr key={audit.id}>
+                  <Fragment key={audit.id}>
+                  <tr>
                     <td className="py-2.5 px-3 text-gray-900 font-medium max-w-[240px] truncate">
                       {audit.latest_benchmark?.store_domain ?? audit.store_url.replace(/^https?:\/\//, "")}
                     </td>
@@ -210,8 +213,24 @@ function ScansTable() {
                           </Link>
                         )
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setOpenAgents((cur) => (cur === audit.id ? null : audit.id))}
+                        aria-expanded={openAgents === audit.id}
+                        className="ml-3 text-tradual-primary hover:underline font-medium"
+                      >
+                        Agents {openAgents === audit.id ? "▴" : "▾"}
+                      </button>
                     </td>
                   </tr>
+                  {openAgents === audit.id && (
+                    <tr>
+                      <td colSpan={6} className="p-0">
+                        <AgentsDropdown auditId={audit.id} auditReady={audit.status === "ready_for_review"} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
                 {!loading && items.length === 0 && (
                   <tr>

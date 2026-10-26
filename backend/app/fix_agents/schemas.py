@@ -5,6 +5,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 AgentName = Literal["speed_bloat", "tracking", "cro_pdp", "checkout_schema"]
+# Every agent an operator can start per audit: the four fix agents, plus the verifier and
+# funnel agent (which also run automatically inside the audit pipeline). A manual run's
+# result is stored on its run row only — it never changes the audit or the client report.
+RunAgentName = Literal["speed_bloat", "tracking", "cro_pdp", "checkout_schema", "verifier", "funnel"]
 RunStatus = Literal["queued", "processing", "done", "failed"]
 Risk = Literal["laag", "middel", "hoog"]
 
@@ -59,14 +63,15 @@ class FixPackage(BaseModel):
 
 
 class FixAgentRunRequest(BaseModel):
-    agents: list[AgentName] = Field(min_length=1)
+    agents: list[RunAgentName] = Field(min_length=1)
 
 
 class FixAgentRunOut(BaseModel):
     id: uuid.UUID
-    agent: AgentName
+    agent: RunAgentName
     status: RunStatus
-    result: FixPackage | None = None
+    # FixPackage (fix agents), VerificationReport (verifier) or FunnelWalk (funnel).
+    result: dict | None = None
     error_message: str | None = None
     model: str | None = None
     input_tokens: int | None = None
@@ -77,6 +82,9 @@ class FixAgentRunOut(BaseModel):
 
 class FixAgentRunsResponse(BaseModel):
     audit_id: uuid.UUID
+    store_url: str | None = None
+    company_name: str | None = None
+    audit_status: str | None = None
     has_admin_token: bool
     shopify_shop_domain: str | None = None
     runs: list[FixAgentRunOut]

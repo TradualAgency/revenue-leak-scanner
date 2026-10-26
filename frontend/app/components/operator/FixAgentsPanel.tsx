@@ -7,13 +7,9 @@ import {
 } from "~/lib/api";
 import { eurRange } from "~/lib/format";
 import type { FixAgentName, FixAgentRun, FixAgentRunsResponse, FixItem } from "~/lib/types";
+import { AGENT_CATALOG, type AgentInfo, isFixAgent, isFixRun } from "./agentCatalog";
 
-const AGENTS: { name: FixAgentName; label: string; description: string }[] = [
-  { name: "speed_bloat", label: "Snelheid & app-bloat", description: "Scripts uitstellen/verwijderen, LCP-afbeelding, overbodige apps" },
-  { name: "tracking", label: "Tracking & CAPI", description: "Consent Mode v2, Meta CAPI, GA4, dubbele pixels" },
-  { name: "cro_pdp", label: "CRO productpagina", description: "Social proof, mobiel boven de vouw, cart, e-mailcapture" },
-  { name: "checkout_schema", label: "Checkout & schema", description: "Checkout-frictie, Product-JSON-LD, Merchant Center-feed" },
-];
+const AGENTS = AGENT_CATALOG.filter((a): a is AgentInfo & { name: FixAgentName } => isFixAgent(a.name));
 
 const AGENT_LABEL = Object.fromEntries(AGENTS.map((a) => [a.name, a.label])) as Record<FixAgentName, string>;
 
@@ -46,7 +42,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function FixCard({ fix }: { fix: FixItem }) {
+export function FixCard({ fix }: { fix: FixItem }) {
   return (
     <div className="border border-gray-100 rounded-xl p-4 space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -242,7 +238,8 @@ export default function FixAgentsPanel({ auditId }: { auditId: string }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const latest = latestPerAgent(data?.runs ?? []);
+  // The same run list also holds manual verifier/funnel runs; this panel shows fix agents only.
+  const latest = latestPerAgent((data?.runs ?? []).filter(isFixRun));
   const anyActive = latest.some(isActive);
 
   function refresh() {

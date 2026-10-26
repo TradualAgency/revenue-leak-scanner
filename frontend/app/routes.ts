@@ -7,6 +7,7 @@ export default [
   route("scans", "routes/scans.tsx"),
   route("full-audit", "routes/full-audit.tsx"),
   route("full-audit/:auditId", "routes/full-audit.$auditId.tsx"),
+  route("full-audit/:auditId/agents/:agent", "routes/full-audit.$auditId.agents.$agent.tsx"),
   route("revenue-leak/:auditId", "routes/revenue-leak.$auditId.tsx"),
   route("marktvergelijking/:runId", "routes/marktvergelijking.$runId.tsx"),
 ] satisfies RouteConfig;

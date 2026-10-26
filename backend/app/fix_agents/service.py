@@ -8,6 +8,9 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.agents.funnel.service import walk_funnel
+from app.agents.verifier.schemas import VerificationReport
+from app.agents.verifier.service import run_verifier, verifier_model
 from app.fix_agents.agents import AGENTS
 from app.fix_agents.models import FixAgentRun
 from app.fix_agents.runtime import AgentError, run_agent
@@ -30,9 +33,40 @@ async def _finish(run_id: uuid.UUID, **fields) -> None:
         await db.commit()
 
 
+def _model_for(agent: str) -> str:
+    if agent == "verifier":
+        return verifier_model()
+    if agent == "funnel":
+        return settings.FUNNEL_AGENT_MODEL
+    return settings.FIX_AGENT_MODEL
+
+
+async def _run_verifier(run_id: uuid.UUID, data: FullAuditData, admin, client) -> None:
+    report = await run_verifier(data, admin=admin, client=client, force=True)
+    if report is None:
+        report = VerificationReport(model=verifier_model(), errors=["Geen geprijsde findings om te controleren."])
+    await _finish(
+        run_id, status="done", result=report.model_dump(mode="json"),
+        input_tokens=report.input_tokens, output_tokens=report.output_tokens,
+    )
+
+
+async def _run_funnel(run_id: uuid.UUID, audit_id: uuid.UUID, data: FullAuditData, client) -> None:
+    # The scraped page set isn't stored with the audit; the agent finds a product from
+    # the homepage itself.
+    walk = await walk_funnel(audit_id, data.store_url, [{"url": data.store_url}], client=client, force=True)
+    await _finish(
+        run_id, status="failed" if walk.status == "failed" else "done",
+        result=walk.model_dump(mode="json"),
+        error_message="; ".join(walk.warnings)[:2000] if walk.status == "failed" else None,
+        input_tokens=walk.input_tokens, output_tokens=walk.output_tokens,
+    )
+
+
 async def run_fix_agents(audit_id: uuid.UUID, run_ids: list[uuid.UUID]) -> None:
-    """Run the queued agents for one audit in parallel. One failing agent marks only
-    its own run as failed."""
+    """Run the queued agents for one audit in parallel — fix agents, and manual verifier
+    and funnel runs. One failing agent marks only its own run as failed. Results land
+    on the run rows only: a manual run never changes the audit or the client report."""
     async with AsyncSessionLocal() as db:
         audit = await db.get(FullAudit, audit_id)
         runs = (await db.execute(select(FixAgentRun).where(FixAgentRun.id.in_(run_ids)))).scalars().all()
@@ -43,7 +77,7 @@ async def run_fix_agents(audit_id: uuid.UUID, run_ids: list[uuid.UUID]) -> None:
             return
         for run in runs:
             run.status = "processing"
-            run.model = settings.FIX_AGENT_MODEL
+            run.model = _model_for(run.agent)
         await db.commit()
         agents = [(run.id, run.agent) for run in runs]
         data = FullAuditData.model_validate(audit.audit_data)
@@ -64,6 +98,10 @@ async def run_fix_agents(audit_id: uuid.UUID, run_ids: list[uuid.UUID]) -> None:
         # Each agent gets its own context: page cache and the used-admin flag are per run.
         ctx = ToolContext(audit=data, admin=admin)
         try:
+            if agent == "verifier":
+                return await _run_verifier(run_id, data, admin, client)
+            if agent == "funnel":
+                return await _run_funnel(run_id, audit_id, data, client)
             result = await run_agent(client, AGENTS[agent], ctx, findings)
         except (AgentError, anthropic.APIError) as exc:
             await _finish(run_id, status="failed", error_message=str(exc)[:2000])

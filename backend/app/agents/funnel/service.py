@@ -105,8 +105,11 @@ async def walk_funnel(
     store_url: str,
     pages: list[dict],
     client: anthropic.AsyncAnthropic | None = None,
+    force: bool = False,
 ) -> FunnelWalk:
-    if not settings.FUNNEL_AGENT_ENABLED or (client is None and not settings.ANTHROPIC_API_KEY):
+    """`force`: a manual start from the operator UI runs even when the automatic run
+    inside the audit pipeline is switched off."""
+    if (not settings.FUNNEL_AGENT_ENABLED and not force) or (client is None and not settings.ANTHROPIC_API_KEY):
         return FunnelWalk(status="skipped")
     client = client or anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     model = settings.FUNNEL_AGENT_MODEL
