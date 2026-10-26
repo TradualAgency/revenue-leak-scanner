@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
+from app.agents.funnel.schemas import FunnelStep, FunnelWalk
 from app.agents.verifier.schemas import VerificationReport
 
 ScanLevel = Literal["outside-only", "semi", "full-access"]
@@ -483,6 +484,8 @@ class FindingOut(BaseModel):
     pages_affected: list[str] = []
     sources: list[str] = []
     verify_manually: bool = False
+    # Funnel-agent screenshots (served at /full-audit/{id}/screenshots/{screenshot_id}).
+    screenshot_ids: list[str] = []
 
 
 class ActionItem(BaseModel):
@@ -794,6 +797,8 @@ class FullAuditData(BaseModel):
     revenue_leak: RevenueLeakReport | None = None
     seranking_traffic: SeRankingTraffic | None = None
     competitor_benchmark: CompetitorBenchmarkReport | None = None
+    # Funnel agent (app/agents/funnel): a mobile browser walk with screenshot evidence.
+    funnel_walk: FunnelWalk | None = None
     ai_analysis: AiAnalysis | None = None
     sanity_export: dict | None = None
     # Steps that raised and were skipped ("revenue_leak: KeyError: ..."). Operator-only.
@@ -899,6 +904,21 @@ class ClientCitation(BaseModel):
     verified: bool
 
 
+class ClientFunnelIssue(BaseModel):
+    issue_key: str
+    step: str
+    description_nl: str
+    screenshot_id: str | None = None
+
+
+class ClientFunnelWalk(BaseModel):
+    """The funnel walk as the client sees it: what happened, with screenshots — no
+    tool evidence, model, tokens or operator warnings."""
+    steps: list[FunnelStep] = []
+    issues: list[ClientFunnelIssue] = []
+    summary_nl: str | None = None
+
+
 class ClientReportContent(BaseModel):
     """Everything a client may see of an audit. The web report and the Sanity export
     are both built from this, so the two can't drift apart or leak differently."""
@@ -909,6 +929,7 @@ class ClientReportContent(BaseModel):
     assumptions: list[ClientAssumption] = []
     citations: list[ClientCitation] = []
     methodology_note: str | None = None
+    funnel_walk: ClientFunnelWalk | None = None  # only for a completed ('ok') walk
 
 
 class ClientAuditReport(ClientReportContent):

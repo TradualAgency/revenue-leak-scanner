@@ -7,6 +7,7 @@ import {
 import ActionList from "~/components/report/ActionList";
 import AdTrafficImpact from "~/components/report/AdTrafficImpact";
 import AssumptionsSection from "~/components/report/AssumptionsSection";
+import FunnelWalkSection from "~/components/report/FunnelWalkSection";
 import HeroFigure from "~/components/report/HeroFigure";
 import Notice from "~/components/report/Notice";
 import ReportCard from "~/components/report/ReportCard";
@@ -493,6 +494,8 @@ export default function RevenueLeakAuditPage() {
         <DataConflictBanner conflicts={conflicts} />
 
         <ActionList actions={data.actions ?? []} />
+
+        {report.funnel_walk && <FunnelWalkSection auditId={report.id} walk={report.funnel_walk} />}
 
         {/* CEO Triggers */}
         {allKpis.length > 0 && (

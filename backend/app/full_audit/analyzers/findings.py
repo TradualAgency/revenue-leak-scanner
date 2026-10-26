@@ -57,6 +57,8 @@ class PricedFinding:
     fixed_low_eur: float | None = None
     fixed_high_eur: float | None = None
     sources: list[str] = field(default_factory=list)
+    # Funnel-agent evidence (AuditScreenshot ids), merged across registrations.
+    screenshot_ids: list[str] = field(default_factory=list)
 
     @property
     def is_priceable(self) -> bool:
@@ -88,6 +90,7 @@ class FindingsRegistry:
             return finding
 
         existing.pages_affected = sorted(set(existing.pages_affected) | set(finding.pages_affected))
+        existing.screenshot_ids += [sid for sid in finding.screenshot_ids if sid not in existing.screenshot_ids]
         if source not in existing.sources:
             existing.sources.append(source)
         if (finding.uplift_high or 0) != (existing.uplift_high or 0) or (

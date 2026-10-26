@@ -129,6 +129,9 @@ async def test_agent_that_never_submits_fails(monkeypatch):
         await run_agent(client, AGENTS["tracking"], ToolContext(audit=_audit()), [])
     # The second-to-last turn carries a "submit now" nudge.
     assert client.calls[1]["messages"][-1]["content"][-1]["type"] == "text"
+    # The last turn forces the submit tool; earlier turns leave the choice to the model.
+    assert "tool_choice" not in client.calls[0]
+    assert client.calls[1]["tool_choice"] == {"type": "tool", "name": "submit_fix_package"}
 
 
 @pytest.mark.asyncio

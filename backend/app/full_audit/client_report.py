@@ -9,6 +9,7 @@ because nobody remembered to strip it, and the two client outputs can't disagree
 
 from __future__ import annotations
 
+from app.agents.funnel.schemas import FunnelWalk
 from app.full_audit.analyzers.benchmarks import CITATIONS
 from app.full_audit.models import FullAudit
 from app.full_audit.schemas import (
@@ -17,6 +18,8 @@ from app.full_audit.schemas import (
     ClientAuditReport,
     ClientCeoTrigger,
     ClientCitation,
+    ClientFunnelIssue,
+    ClientFunnelWalk,
     ClientReportContent,
     ClientRevenueLeakReport,
     ClientSeRankingTraffic,
@@ -101,6 +104,19 @@ def client_citations(leak: RevenueLeakReport) -> list[ClientCitation]:
     ]
 
 
+def client_funnel_walk(walk: FunnelWalk | None) -> ClientFunnelWalk | None:
+    if walk is None or walk.status != "ok":
+        return None
+    return ClientFunnelWalk(
+        steps=walk.steps,
+        issues=[
+            ClientFunnelIssue(issue_key=i.issue_key, step=i.step, description_nl=i.description_nl, screenshot_id=i.screenshot_id)
+            for i in walk.issues
+        ],
+        summary_nl=walk.summary_nl,
+    )
+
+
 def build_client_content(data: FullAuditData | None) -> ClientReportContent:
     if data is None:
         return ClientReportContent()
@@ -118,6 +134,7 @@ def build_client_content(data: FullAuditData | None) -> ClientReportContent:
         assumptions=client_assumptions(leak.funnel) if leak and leak.funnel else [],
         citations=client_citations(leak) if leak else [],
         methodology_note=data.methodology_note,
+        funnel_walk=client_funnel_walk(data.funnel_walk),
     )
 
 

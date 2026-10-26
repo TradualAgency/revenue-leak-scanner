@@ -393,6 +393,8 @@ export interface FindingOut {
   uplift_high: number | null;
   pages_affected: string[];
   sources: string[];
+  /** Funnel-agent screenshots; see screenshotUrl() in lib/api.ts. */
+  screenshot_ids?: string[];
   verify_manually: boolean;
 }
 
@@ -767,6 +769,7 @@ export interface FullAuditData {
   revenue_leak: RevenueLeakReport | null;
   seranking_traffic: SeRankingTraffic | null;
   competitor_benchmark: CompetitorBenchmarkReport | null;
+  funnel_walk?: FunnelWalk | null;
   ai_analysis: AiAnalysis | null;
   sanity_export: Record<string, unknown> | null;
   pipeline_warnings?: string[];
@@ -803,6 +806,8 @@ export interface ClientAuditReport {
   assumptions: ClientAssumption[];
   citations: ClientCitation[];
   methodology_note: string | null;
+  /** Only present for a completed walk. */
+  funnel_walk?: ClientFunnelWalk | null;
 }
 
 export interface FullAuditResponse {
@@ -1178,4 +1183,40 @@ export interface AdminTokenResponse {
   shopify_shop_domain: string | null;
   shop_name: string | null;
   scopes: string[];
+}
+
+// --- Funnel agent (mobile browser walk) ---------------------------------------------
+
+export type FunnelStepName = "home" | "search" | "collection" | "product" | "variant" | "add_to_cart" | "cart" | "checkout";
+
+export interface FunnelStep {
+  step: FunnelStepName;
+  reached: boolean;
+  url: string | null;
+  duration_ms: number | null;
+  note_nl: string | null;
+}
+
+export interface ClientFunnelIssue {
+  issue_key: string;
+  step: FunnelStepName;
+  description_nl: string;
+  screenshot_id: string | null;
+}
+
+export interface ClientFunnelWalk {
+  steps: FunnelStep[];
+  issues: ClientFunnelIssue[];
+  summary_nl: string | null;
+}
+
+/** Operator view: the client fields plus evidence, status and cost. */
+export interface FunnelWalk extends ClientFunnelWalk {
+  status: "ok" | "blocked" | "failed" | "skipped";
+  /** machine_confirmed: the browser recorded the fact this key needs to carry euros. */
+  issues: (ClientFunnelIssue & { evidence_nl: string; page_url: string | null; machine_confirmed: boolean })[];
+  warnings: string[];
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
 }

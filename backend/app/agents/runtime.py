@@ -1,5 +1,5 @@
-"""The shared agent loop: a manual tool-use loop over the read-only tools in
-agents/tools.py, ending when the agent calls its submit tool with a payload that
+"""The shared agent loop: a manual tool-use loop over a set of tools (by default the
+read-only audit tools in agents/tools.py), ending when the agent calls its submit tool with a payload that
 validates against `submission_model`.
 
 A validation error goes back to the model as an is_error tool_result so it can
@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any, Awaitable, Callable, Generic, TypeVar
 
 import anthropic
 from pydantic import BaseModel, ValidationError
 
-from app.agents.tools import ToolContext, execute_tool, tool_definitions
+from app.agents.tools import execute_tool
 
 S = TypeVar("S", bound=BaseModel)
+
+# (ctx, tool name, args) -> (content, is_error). Content is text, or a list of content
+# blocks (e.g. text + an image) for tools that return a screenshot.
+Executor = Callable[[Any, str, dict], Awaitable[tuple[str | list[dict], bool]]]
 
 
 class AgentError(Exception):
@@ -41,20 +45,21 @@ async def run_tool_loop(
     *,
     model: str,
     system: str,
-    tool_names: list[str],
+    tools: list[dict],
     submit_tool: dict,
     submission_model: type[S],
     first_message: str,
-    ctx: ToolContext,
+    ctx: Any,
     max_turns: int,
+    executor: Executor = execute_tool,
 ) -> LoopResult[S]:
     submit_name = submit_tool["name"]
-    tools = [*tool_definitions(tool_names), submit_tool]
+    tools = [*tools, submit_tool]
     messages: list[dict] = [{"role": "user", "content": first_message}]
     input_tokens = output_tokens = 0
 
     for turn in range(max_turns):
-        response = await client.messages.create(
+        request = dict(
             model=model,
             max_tokens=16000,
             system=system,
@@ -65,6 +70,17 @@ async def run_tool_loop(
             # Auto-caches the growing prefix (tools, system, history) turn over turn.
             cache_control={"type": "ephemeral"},
         )
+        if turn == max_turns - 1:
+            # Last turn: force the submit, so a run that used its budget still returns
+            # what it found instead of nothing.
+            request["tool_choice"] = {"type": "tool", "name": submit_name}
+        try:
+            response = await client.messages.create(**request)
+        except anthropic.BadRequestError:
+            if "tool_choice" not in request:
+                raise
+            # Some platform/model combinations only allow forced tool use without thinking.
+            response = await client.messages.create(**{**request, "thinking": {"type": "disabled"}})
         usage = response.usage
         input_tokens += (usage.input_tokens or 0) + (usage.cache_read_input_tokens or 0) + (usage.cache_creation_input_tokens or 0)
         output_tokens += usage.output_tokens or 0
@@ -88,8 +104,8 @@ async def run_tool_loop(
                 except ValidationError as exc:
                     return {"type": "tool_result", "tool_use_id": block.id, "is_error": True, "content": str(exc)}, None
                 return {"type": "tool_result", "tool_use_id": block.id, "content": "Ontvangen."}, submission
-            text, is_error = await execute_tool(ctx, block.name, dict(block.input or {}))
-            result = {"type": "tool_result", "tool_use_id": block.id, "content": text}
+            content, is_error = await executor(ctx, block.name, dict(block.input or {}))
+            result = {"type": "tool_result", "tool_use_id": block.id, "content": content}
             if is_error:
                 result["is_error"] = True
             return result, None
@@ -101,7 +117,7 @@ async def run_tool_loop(
 
         content: list[dict] = [r for r, _ in handled]
         if turn == max_turns - 2:
-            content.append({"type": "text", "text": f"Nog één beurt over: dien nu je resultaat in via {submit_name}."})
+            content.append({"type": "text", "text": f"Laatste beurt: dien nu je resultaat in via {submit_name}, met wat je tot nu toe weet."})
         messages.append({"role": "user", "content": content})
 
     raise AgentError(f"Geen resultaat ingediend binnen {max_turns} beurten.")

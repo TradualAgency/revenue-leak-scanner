@@ -19,7 +19,7 @@ from pathlib import Path
 import anthropic
 
 from app.agents.runtime import AgentError, run_tool_loop, submit_definition
-from app.agents.tools import AUDIT_SECTIONS, ToolContext, get_audit_section
+from app.agents.tools import AUDIT_SECTIONS, ToolContext, get_audit_section, tool_definitions
 from app.agents.verifier.schemas import FindingVerdict, VerificationReport, VerificationSubmission
 from app.config import settings
 from app.fix_agents.agents import AGENTS, AgentSpec
@@ -58,9 +58,11 @@ def verifier_model() -> str:
 
 
 def verification_candidates(data: FullAuditData) -> list[FindingOut]:
-    """Only findings that put a euro in the report are worth an agent's time."""
+    """Only findings that put a euro in the report are worth an agent's time. Funnel-walk
+    findings are skipped: they were observed in a real browser with a screenshot, and
+    this agent has no browser to re-check them with."""
     findings = data.revenue_leak.findings if data.revenue_leak else []
-    return [f for f in findings if f.priced and f.status != "good"]
+    return [f for f in findings if f.priced and f.status != "good" and not f.finding_id.startswith("walk.")]
 
 
 def group_findings(findings: list[FindingOut]) -> dict[str, list[FindingOut]]:
@@ -130,7 +132,7 @@ async def run_verifier(
                 client,
                 model=model,
                 system=_SYSTEM,
-                tool_names=list(spec.tools),
+                tools=tool_definitions(list(spec.tools)),
                 submit_tool=_SUBMIT_DEFINITION,
                 submission_model=VerificationSubmission,
                 first_message=await _first_message(spec, ctx, findings),

@@ -13,6 +13,9 @@ WORKDIR /app
 COPY pyproject.toml ./
 RUN poetry install --only main --no-root
 
+# Chromium + its system libraries for the funnel agent (app/agents/funnel).
+RUN playwright install --with-deps chromium
+
 COPY . .
 
 EXPOSE 8000

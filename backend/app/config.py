@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     VERIFIER_ENABLED: bool = True
     VERIFIER_MODEL: str | None = None
     VERIFIER_MAX_TURNS: int = 12
+    # Funnel agent (app/agents/funnel): walks home -> search -> PDP -> cart -> checkout in a
+    # mobile browser during every full audit. Needs Chromium (`playwright install chromium`).
+    FUNNEL_AGENT_ENABLED: bool = True
+    FUNNEL_AGENT_MODEL: str = "claude-sonnet-5"
+    FUNNEL_AGENT_MAX_TURNS: int = 40
+    FUNNEL_AGENT_TIMEOUT_S: int = 300
     # Fernet key (`Fernet.generate_key()`) for the per-audit Shopify Admin token. Empty
     # means tokens can't be stored — the agents then work outside-only.
     TOKEN_ENCRYPTION_KEY: str = ""

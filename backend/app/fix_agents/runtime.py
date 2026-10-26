@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import anthropic
 
 from app.agents.runtime import AgentError, run_tool_loop, submit_definition
-from app.agents.tools import AUDIT_SECTIONS, ToolContext, get_audit_section
+from app.agents.tools import AUDIT_SECTIONS, ToolContext, get_audit_section, tool_definitions
 from app.config import settings
 from app.fix_agents.agents import AgentSpec
 from app.fix_agents.schemas import FixItem, FixPackage, FixPackageSubmission
@@ -108,7 +108,7 @@ async def run_agent(
         client,
         model=settings.FIX_AGENT_MODEL,
         system=spec.system_prompt,
-        tool_names=list(spec.tools),
+        tools=tool_definitions(list(spec.tools)),
         submit_tool=_SUBMIT_DEFINITION,
         submission_model=FixPackageSubmission,
         first_message=await _initial_message(spec, ctx, owned),

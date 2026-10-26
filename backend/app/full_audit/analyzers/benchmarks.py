@@ -279,6 +279,23 @@ CITATIONS: dict[str, Citation] = {
             "Het vergelijkingspunt is echt gemeten; de omrekening naar euro's gebruikt dezelfde aannames als de rest van dit rapport."
         ),
     ),
+    "TRADUAL_FUNNEL_WALK": Citation(
+        source="Tradual funnel walk — observed in a mobile browser session",
+        figure="n/a — the blocker itself is observed; the conversion effect is our estimate",
+        applies_to="FUNNEL_WALK_RULES (walk.* findings)",
+        our_interpretation=(
+            "What's verified is that the blocker exists: an agent hit it in a real mobile "
+            "session, with a screenshot. The uplift range is an internal estimate, kept small "
+            "and applied to mobile sessions only, since one walk can't tell how many "
+            "visitors hit it."
+        ),
+        verified=True,  # honestly labelled: observed problem, internal effect estimate
+        source_nl="Tradual funnel-test — gezien in een echte mobiele browsersessie",
+        figure_nl="Het probleem is met eigen ogen gezien en vastgelegd met een screenshot.",
+        note_nl=(
+            "Het effect op conversie is een eigen, voorzichtige schatting, alleen gerekend over mobiele bezoekers."
+        ),
+    ),
     "INTERNAL_ESTIMATE": Citation(
         source="No external source",
         figure="n/a",
@@ -293,4 +310,25 @@ CITATIONS: dict[str, Citation] = {
             "Voor deze punten bestaat geen betrouwbaar onderzoek naar het effect op conversie. We houden de schatting bewust klein."
         ),
     ),
+}
+
+
+@dataclass(frozen=True)
+class FunnelWalkRule:
+    stage: str
+    exposure: str  # "mobile": funnel.mobile_share (the walk is mobile) | "all": 1.0
+    uplift_low: float
+    uplift_high: float
+    priority: str
+    citation: str = "TRADUAL_FUNNEL_WALK"
+
+
+# Funnel-agent issue keys that carry a euro figure — and only when the browser layer
+# recorded the matching fact (agents/funnel/service.PRICED_EVIDENCE). Every other key
+# is shown without one; `shipping_cost_late` maps onto the analyzers' own
+# shipping.cost_clarity finding.
+FUNNEL_WALK_RULES: dict[str, FunnelWalkRule] = {
+    "atc_blocked_by_overlay": FunnelWalkRule("add_to_cart", "mobile", 0.02, 0.06, "high"),
+    "atc_no_feedback": FunnelWalkRule("add_to_cart", "mobile", 0.01, 0.03, "medium"),
+    "checkout_unreachable": FunnelWalkRule("reach_checkout", "mobile", 0.03, 0.10, "critical"),
 }

@@ -26,8 +26,9 @@ restatements of the layer 1+3 total (theoretical CR, CPA, ROAS) — not new euro
 
 from __future__ import annotations
 
+from app.agents.funnel.schemas import FunnelWalk
 from app.full_audit.analyzers.actions import build_action_list
-from app.full_audit.analyzers.benchmarks import CITATIONS, INP_GOOD_TBT_MS, inp_uplift, lcp_uplift
+from app.full_audit.analyzers.benchmarks import CITATIONS, FUNNEL_WALK_RULES, INP_GOOD_TBT_MS, inp_uplift, lcp_uplift
 from app.full_audit.analyzers.findings import FindingsRegistry, PricedFinding, cro_finding_id, price_findings
 from app.full_audit.analyzers.funnel import build_funnel_model
 from app.full_audit.analyzers.performance import lcp_source_caveat, worst_mobile_lcp
@@ -185,6 +186,7 @@ def _finding_out(finding: PricedFinding, priced: dict[str, tuple[float, float]])
         pages_affected=finding.pages_affected,
         sources=finding.sources,
         verify_manually=finding.verify_manually,
+        screenshot_ids=finding.screenshot_ids,
     )
 
 
@@ -753,6 +755,96 @@ def _register_checkout_and_cro_findings(
 _LOW_UNPRICED = dict(confidence="low", verify_manually=True)
 
 
+def _shipping_cost_clarity_finding(**overrides) -> PricedFinding:
+    """One definition for both detectors (the shipping analyzer and the funnel agent), so
+    the registry merges them instead of warning about differing uplift."""
+    return PricedFinding(**{**dict(
+        finding_id="shipping.cost_clarity", owning_layer=3, stage="add_to_cart", kind="revenue",
+        metric="Zien klanten vooraf wat verzending kost?",
+        what_we_measure="Of verzendkosten of de gratis-verzendgrens al op de productpagina staan, of pas in de checkout opduiken",
+        priority="high", status="warning",
+        calculation_note="Verzendkosten die pas in de checkout verschijnen → 1–3% conversie-impact op alle bestellingen",
+        signal="Geen verzendkosten of gratis-verzendgrens gevonden op de productpagina",
+        exposure_share=1.0, uplift_low=0.01, uplift_high=0.03,
+        confidence="medium", citation="BAYMARD_EXTRA_COSTS",
+        pages_affected=["Product page (PDP)"],
+    ), **overrides})
+
+
+_WALK_LABELS: dict[str, str] = {
+    "atc_blocked_by_overlay": "Kan de bezoeker op mobiel op 'In winkelwagen' klikken?",
+    "variant_picker_broken": "Werkt het kiezen van maat of kleur?",
+    "atc_no_feedback": "Ziet de bezoeker dat het product in de winkelwagen zit?",
+    "checkout_unreachable": "Komt de bezoeker vanuit de winkelwagen in de checkout?",
+    "search_no_results": "Vindt de zoekfunctie wat bezoekers zoeken?",
+    "intrusive_mobile_interstitial": "Krijgen mobiele bezoekers meteen een schermvullende popup?",
+    "slow_cart_feedback": "Reageert de winkelwagen snel genoeg?",
+    "price_mismatch_pdp_cart": "Klopt de prijs in de winkelwagen met de productpagina?",
+    "tap_target_too_small": "Zijn knoppen op mobiel goed te raken?",
+    "other": "Wat liep er nog meer mis tijdens de funnel-test?",
+}
+
+_WALK_STEP_PAGES = {
+    "home": "Homepage", "search": "Zoeken", "collection": "Collection page", "product": "Product page (PDP)",
+    "variant": "Product page (PDP)", "add_to_cart": "Product page (PDP)", "cart": "Cart", "checkout": "Checkout",
+}
+
+
+def _register_funnel_walk_findings(
+    registry: FindingsRegistry, funnel_walk: FunnelWalk | None, funnel: FunnelModel,
+) -> list[str]:
+    """Findings from the funnel agent's mobile walk. The agent only picked the issue
+    key; stage, exposure and uplift come from FUNNEL_WALK_RULES. Returns the layer-3
+    ids that need their own row."""
+    if funnel_walk is None or funnel_walk.status != "ok":
+        return []
+    layer3: list[str] = []
+    other_count = 0
+    for issue in funnel_walk.issues:
+        page = _WALK_STEP_PAGES.get(issue.step, "Other")
+        shots = [issue.screenshot_id] if issue.screenshot_id else []
+        if issue.issue_key == "shipping_cost_late":
+            finding = registry.register(
+                _shipping_cost_clarity_finding(signal=issue.description_nl, screenshot_ids=shots), source="funnel_walk",
+            )
+        else:
+            finding_id = f"walk.{issue.issue_key}"
+            if issue.issue_key == "other":
+                other_count += 1
+                finding_id = f"walk.other_{other_count}"
+            # Priced only when the browser recorded the fact behind the key, never on the model's word.
+            rule = FUNNEL_WALK_RULES.get(issue.issue_key) if issue.machine_confirmed else None
+            stage = rule.stage if rule else _WALK_STAGE.get(issue.step)
+            finding = registry.register(PricedFinding(
+                finding_id=finding_id, owning_layer=3, stage=stage, kind="revenue",  # type: ignore[arg-type]
+                metric=_WALK_LABELS[issue.issue_key],
+                what_we_measure="Gezien tijdens een test met een echte mobiele browser: zoeken, product, winkelwagen, checkout",
+                priority=(rule.priority if rule else "medium"),  # type: ignore[arg-type]
+                status="critical" if rule and rule.priority == "critical" else "warning",
+                calculation_note=(
+                    "Alleen mobiele bezoekers; kleine, voorzichtige schatting van het conversie-effect"
+                    if rule else "Gezien in de funnel-test — geen bedrag, wel een duidelijk obstakel"
+                ),
+                signal=issue.description_nl,
+                exposure_share=(funnel.mobile_share if rule.exposure == "mobile" else 1.0) if rule else None,
+                uplift_low=rule.uplift_low if rule else None,
+                uplift_high=rule.uplift_high if rule else None,
+                confidence="medium",
+                citation=rule.citation if rule else None,
+                pages_affected=[page],
+                screenshot_ids=shots,
+            ), source="funnel_walk")
+        if finding.finding_id not in layer3:
+            layer3.append(finding.finding_id)
+    return layer3
+
+
+_WALK_STAGE = {
+    "home": "session", "search": "product_view", "collection": "product_view", "product": "product_view",
+    "variant": "add_to_cart", "add_to_cart": "add_to_cart", "cart": "reach_checkout", "checkout": "reach_checkout",
+}
+
+
 def _register_extra_findings(
     registry: FindingsRegistry,
     funnel: FunnelModel,
@@ -773,17 +865,7 @@ def _register_extra_findings(
             layer3.append(finding.finding_id)
 
     if shipping and shipping.cost_info_on_pdp is False:
-        add(PricedFinding(
-            finding_id="shipping.cost_clarity", owning_layer=3, stage="add_to_cart", kind="revenue",
-            metric="Zien klanten vooraf wat verzending kost?",
-            what_we_measure="Of verzendkosten of de gratis-verzendgrens al op de productpagina staan, of pas in de checkout opduiken",
-            priority="high", status="warning",
-            calculation_note="Verzendkosten die pas in de checkout verschijnen → 1–3% conversie-impact op alle bestellingen",
-            signal="Geen verzendkosten of gratis-verzendgrens gevonden op de productpagina",
-            exposure_share=1.0, uplift_low=0.01, uplift_high=0.03,
-            confidence="medium", citation="BAYMARD_EXTRA_COSTS",
-            pages_affected=["Product page (PDP)"],
-        ), "shipping")
+        add(_shipping_cost_clarity_finding(), "shipping")
 
     probed = checkout is not None and checkout.probe_status == "ok"
     has_threshold = bool(shipping and shipping.free_shipping_threshold_eur)
@@ -1436,6 +1518,7 @@ def calculate_revenue_leak(
     catalog: ShopifyCatalogHealth | None = None,
     owned: OwnedChannels | None = None,
     verdicts: dict[str, str] | None = None,
+    funnel_walk: FunnelWalk | None = None,
 ) -> RevenueLeakReport:
     funnel, data_conflicts = build_funnel_model(
         annual_revenue_eur, traffic,
@@ -1453,6 +1536,9 @@ def calculate_revenue_leak(
     layer3_ctx["extra_layer3"] = _register_extra_findings(
         registry, funnel, shipping, checkout, catalog, owned, rich_results, product_feeds,
     )
+    for fid in _register_funnel_walk_findings(registry, funnel_walk, funnel):
+        if fid not in layer3_ctx["extra_layer3"]:
+            layer3_ctx["extra_layer3"].append(fid)
     _apply_verdicts(registry, verdicts)
     priced = price_findings(registry, funnel)
 

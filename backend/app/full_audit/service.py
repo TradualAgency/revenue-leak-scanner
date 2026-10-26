@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.funnel.service import walk_funnel
 from app.agents.verifier.service import admin_client_for, run_verifier
 from app.analysis.scraper import scrape_store
 from app.database import AsyncSessionLocal
@@ -323,6 +324,7 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 detect_shopify_apps(pages),            # 19
                 detect_retention(pages),               # 20
                 analyze_eu_compliance(pages),           # 21
+                walk_funnel(audit_id, store_url, pages), # 22 — funnel agent (mobile browser)
                 return_exceptions=True,
             )
 
@@ -340,7 +342,7 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 "seo", "security", "dns_email", "domain_health", "rich_results",
                 "server_side_tracking", "product_feeds", "site_search", "shipping", "returns",
                 "multi_region", "marketplaces", "shopify_catalog", "shopify_apps", "retention",
-                "eu_compliance",
+                "eu_compliance", "funnel_walk",
             ]
 
             def _safe(index: int, default=None):
@@ -394,6 +396,9 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
             shopify_apps = _safe(19)
             retention = _safe(20)
             eu_compliance = _safe(21)
+            funnel_walk = _safe(22)
+            if funnel_walk is not None and funnel_walk.status == "failed":
+                pipeline_warnings.extend(f"funnel_walk: {w}"[:300] for w in funnel_walk.warnings)
 
             # 3. Rollups (synchronous, depend on parallel results)
             cost = _step("cost_analysis", build_cost_analysis, third_party, platform)
@@ -476,6 +481,7 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                     catalog=shopify_catalog,
                     owned=owned,
                     verdicts=verdicts,
+                    funnel_walk=funnel_walk,
                 )
 
             revenue_leak = _step("revenue_leak", _leak)
@@ -544,6 +550,7 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 revenue_leak=revenue_leak,
                 seranking_traffic=seranking_traffic,
                 competitor_benchmark=competitor_benchmark,
+                funnel_walk=funnel_walk,
                 pipeline_warnings=pipeline_warnings,
                 **synthesis,
             )

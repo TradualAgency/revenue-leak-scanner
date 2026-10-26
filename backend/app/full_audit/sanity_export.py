@@ -9,7 +9,7 @@ from pathlib import Path
 import anthropic
 
 from app.config import settings
-from app.full_audit.client_report import build_client_content, client_revenue_leak
+from app.full_audit.client_report import build_client_content, client_funnel_walk, client_revenue_leak
 from app.full_audit.schemas import FullAuditData
 
 logger = logging.getLogger(__name__)
@@ -73,8 +73,11 @@ def _prose_payload(audit: FullAuditData) -> dict:
             "revenue_leak": True,
             "seranking_traffic": {"raw_response": True},
             "pipeline_warnings": True,
+            "funnel_walk": True,
         },
     )
+    fw = client_funnel_walk(audit.funnel_walk)
+    payload["funnel_walk"] = fw.model_dump(mode="json") if fw else None
     payload["revenue_leak"] = (
         client_revenue_leak(audit.revenue_leak).model_dump(mode="json") if audit.revenue_leak else None
     )

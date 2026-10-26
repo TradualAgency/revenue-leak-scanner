@@ -26,6 +26,11 @@ import { clearOperatorKey, getOperatorKey } from "./operatorKey";
 const API_URL = import.meta.env.VITE_API_URL || "";
 const BASE = `${API_URL}/api/v1`;
 
+/** Funnel-agent screenshot; public like the client report that links to it. */
+export function screenshotUrl(auditId: string, screenshotId: string): string {
+  return `${BASE}/full-audit/${auditId}/screenshots/${screenshotId}`;
+}
+
 /**
  * Carries the HTTP status alongside the message. Extends Error so the many
  * `err instanceof Error ? err.message : "..."` call sites keep working unchanged.

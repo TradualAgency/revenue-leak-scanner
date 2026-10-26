@@ -1,9 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.funnel.models import AuditScreenshot
 from app.dependencies import get_db, require_operator_key
 from app.full_audit.client_report import build_client_report
 from app.full_audit.models import FullAudit
@@ -154,3 +155,20 @@ async def get_full_audit_sanity_export(
     if sanity_export is None:
         raise HTTPException(status_code=404, detail="Sanity export not available")
     return sanity_export
+
+
+@router.get("/{audit_id}/screenshots/{screenshot_id}")
+async def get_audit_screenshot(
+    audit_id: uuid.UUID,
+    screenshot_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Funnel-agent evidence. Public like `/report`, which links to it: both uuids are
+    needed, and only screenshots an issue refers to are ever stored."""
+    shot = await db.get(AuditScreenshot, screenshot_id)
+    if shot is None or shot.full_audit_id != audit_id:
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return Response(
+        content=shot.image, media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

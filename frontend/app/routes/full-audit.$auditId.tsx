@@ -16,6 +16,7 @@ import FixAgentsPanel from "~/components/operator/FixAgentsPanel";
 import VerificationPanel from "~/components/operator/VerificationPanel";
 import OperatorGate from "~/components/operator/OperatorGate";
 import ActionList from "~/components/report/ActionList";
+import FunnelWalkSection from "~/components/report/FunnelWalkSection";
 import AdTrafficImpact from "~/components/report/AdTrafficImpact";
 import RoadmapSection from "~/components/report/RoadmapSection";
 import type {
@@ -2292,6 +2293,9 @@ function FullAuditResults() {
                   <RevenueLeakSection data={auditData.revenue_leak} />
                   <FindingsSection findings={auditData.revenue_leak.findings ?? []} />
                   <ActionList actions={auditData.revenue_leak.actions ?? []} />
+                  {auditId && auditData.funnel_walk && auditData.funnel_walk.status !== "skipped" && (
+                    <FunnelWalkSection auditId={auditId} walk={auditData.funnel_walk} />
+                  )}
                   {auditData.revenue_leak.verification && (
                     <VerificationPanel
                       report={auditData.revenue_leak.verification}
