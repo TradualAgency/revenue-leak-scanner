@@ -2069,6 +2069,177 @@ function SanityExportSection({ data }: { data: Record<string, unknown> }) {
 
 // Internal working file: every field, sales copy and ROI included. Prospects get
 // /revenue-leak/:auditId, which reads the client projection from its own endpoint.
+// The page groups its ~30 sections into chapters. Each chapter's content is an array of
+// conditionally-rendered sections, so "is this chapter empty?" falls out of the same
+// conditions that render it — the nav and the content can't disagree.
+type ChapterDef = { id: string; title: string; content: React.ReactNode[] };
+
+function visibleChapters(chapters: ChapterDef[]): ChapterDef[] {
+  return chapters
+    .map((c) => ({ ...c, content: c.content.filter(Boolean) }))
+    .filter((c) => c.content.length > 0);
+}
+
+function ChapterNav({ chapters }: { chapters: ChapterDef[] }) {
+  // Sits right under the sticky site header (h-16).
+  return (
+    <nav className="sticky top-16 z-40 -mx-4 px-4 bg-tradual-bg/95 backdrop-blur border-b border-tradual-border">
+      <ul className="flex gap-5 overflow-x-auto py-3 text-xs font-medium whitespace-nowrap">
+        {chapters.map((c) => (
+          <li key={c.id}>
+            <a href={`#${c.id}`} className="text-tradual-body hover:text-tradual-primary transition-colors">
+              {c.title}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function Chapter({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-32 flex flex-col gap-6 pt-4">
+      <h2
+        className="text-xl font-semibold text-tradual-primary border-b border-[#c5a96f]/40 pb-2"
+        style={{ fontFamily: "var(--font-serif)" }}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function TrafficSourceBadge({ traffic }: { traffic: FullAuditData["seranking_traffic"] }) {
+  return traffic ? (
+    <div className="flex items-center gap-2 px-1 -mb-4">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-medium text-emerald-700">
+        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+        Gemeten via SE Ranking — {(traffic.monthly_organic_sessions + traffic.monthly_paid_sessions).toLocaleString("nl-NL")} bezoekers/mnd
+      </span>
+    </div>
+  ) : (
+    <div className="flex items-center gap-2 px-1 -mb-4">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-medium text-amber-700">
+        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+        Schatting — traffic niet beschikbaar via SE Ranking
+      </span>
+    </div>
+  );
+}
+
+// Reading order: money → what to do → evidence → per-domain detail → operator tools.
+function buildChapters(
+  auditId: string,
+  d: FullAuditData,
+  operatorKey: string | null,
+  sanityExport: Record<string, unknown> | null,
+): ChapterDef[] {
+  const leak = d.revenue_leak;
+  const ai = d.ai_analysis;
+  return [
+    {
+      id: "omzetlek",
+      title: "Omzetlek",
+      content: [
+        leak && <TrafficSourceBadge key="traffic" traffic={d.seranking_traffic} />,
+        leak && <RevenueLeakSection key="leak" data={leak} />,
+        d.ad_traffic_impact && <AdTrafficImpact key="ads" data={d.ad_traffic_impact} />,
+      ],
+    },
+    {
+      id: "acties",
+      title: "Wat te doen",
+      content: [
+        leak && (leak.actions ?? []).length > 0 && <ActionList key="actions" actions={leak.actions ?? []} />,
+        ai?.roadmap && <RoadmapSection key="roadmap" roadmap={ai.roadmap} />,
+        ai && (ai.cro || ai.deliverability || ai.tech_architecture || ai.ad_bounce_revenue) && (
+          <AiAnalysisSection key="ai" data={ai} />
+        ),
+        (d.bloat_what_must_go.length > 0 || ai?.bloat) && (
+          <BloatSection key="bloat" items={d.bloat_what_must_go} aiInsight={ai?.bloat} />
+        ),
+      ],
+    },
+    {
+      id: "onderbouwing",
+      title: "Onderbouwing",
+      content: [
+        leak && (leak.findings ?? []).length > 0 && <FindingsSection key="findings" findings={leak.findings ?? []} />,
+        leak?.verification && (
+          <VerificationPanel key="verify" report={leak.verification} findings={leak.findings ?? []} />
+        ),
+        leak && d.funnel_walk && d.funnel_walk.status !== "skipped" && (
+          <FunnelWalkSection key="walk" auditId={auditId} walk={d.funnel_walk} />
+        ),
+      ],
+    },
+    {
+      id: "techniek",
+      title: "Techniek & snelheid",
+      content: [
+        d.platform_architecture && <PlatformSection key="platform" data={d.platform_architecture} />,
+        d.performance && <PerformanceSection key="perf" data={d.performance} />,
+        d.third_party_scripts && <ThirdPartySection key="3p" data={d.third_party_scripts} />,
+        d.detected_stack && <DetectedStackSection key="stack" data={d.detected_stack} />,
+        (d.shopify_catalog || d.shopify_apps) && (
+          <ShopifyPlatformSection key="shopify" catalog={d.shopify_catalog} apps={d.shopify_apps} />
+        ),
+        d.cost_analysis && <CostSection key="cost" data={d.cost_analysis} />,
+      ],
+    },
+    {
+      id: "tracking",
+      title: "Tracking & conversie",
+      content: [
+        d.tracking_data_quality && <TrackingSection key="tracking" data={d.tracking_data_quality} />,
+        d.server_side_tracking && <ServerSideTrackingSection key="sst" data={d.server_side_tracking} />,
+        d.checkout_flow && <CheckoutSection key="checkout" data={d.checkout_flow} />,
+        d.cro_observations.length > 0 && <CroSection key="cro" items={d.cro_observations} />,
+      ],
+    },
+    {
+      id: "kanalen",
+      title: "Kanalen & vindbaarheid",
+      content: [
+        d.owned_channels && <OwnedChannelsSection key="owned" data={d.owned_channels} />,
+        d.dns_email && <DnsEmailSection key="dns" data={d.dns_email} />,
+        d.rich_results && <RichResultsSection key="rich" data={d.rich_results} />,
+        d.product_feeds && <ProductFeedsSection key="feeds" data={d.product_feeds} />,
+      ],
+    },
+    {
+      id: "compliance",
+      title: "Compliance & veiligheid",
+      content: [
+        d.security_compliance && <SecuritySection key="security" data={d.security_compliance} />,
+        d.domain_health && <DomainHealthSection key="domain" data={d.domain_health} />,
+        d.accessibility && <AccessibilitySection key="a11y" data={d.accessibility} />,
+        (d.retention || d.eu_compliance) && (
+          <RetentionComplianceSection key="retention" retention={d.retention} compliance={d.eu_compliance} />
+        ),
+      ],
+    },
+    {
+      id: "markt",
+      title: "Markt",
+      content: [
+        d.competitor_benchmark && <CompetitorBenchmarkSection key="bench" data={d.competitor_benchmark} />,
+        operatorKey && <CompetitorBenchmarkPanel key="bench-panel" fullAuditId={auditId} />,
+      ],
+    },
+    {
+      id: "tools",
+      title: "Operator-tools",
+      content: [
+        operatorKey && <FixAgentsPanel key="fix" auditId={auditId} />,
+        sanityExport && <SanityExportSection key="sanity" data={sanityExport} />,
+      ],
+    },
+  ];
+}
+
 export default function FullAuditResultsPage() {
   return (
     <OperatorGate>
@@ -2093,6 +2264,9 @@ function FullAuditResults() {
   const isCancelled = statusData?.status === "cancelled";
   const isPending = !isReady && !isFailed && !isCancelled;
   const [stopping, setStopping] = useState(false);
+  const chapters = isReady && auditData && auditId
+    ? visibleChapters(buildChapters(auditId, auditData, operatorKey, sanityExport))
+    : [];
 
   async function handleStop() {
     if (!auditId || !window.confirm("Deze audit stoppen? Wat tot nu toe gedaan is, wordt weggegooid.")) return;
@@ -2307,68 +2481,10 @@ function FullAuditResults() {
                 </div>
               )}
 
-              {/* Sections */}
-              {auditData.platform_architecture && <PlatformSection data={auditData.platform_architecture} />}
-              {auditData.performance && <PerformanceSection data={auditData.performance} />}
-              {auditData.revenue_leak && (
-                <>
-                  {auditData.seranking_traffic ? (
-                    <div className="flex items-center gap-2 px-1 mb-1">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-medium text-emerald-700">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
-                        Gemeten via SE Ranking — {(auditData.seranking_traffic.monthly_organic_sessions + auditData.seranking_traffic.monthly_paid_sessions).toLocaleString("nl-NL")} bezoekers/mnd
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 px-1 mb-1">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-medium text-amber-700">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
-                        Schatting — traffic niet beschikbaar via SE Ranking
-                      </span>
-                    </div>
-                  )}
-                  <RevenueLeakSection data={auditData.revenue_leak} />
-                  <FindingsSection findings={auditData.revenue_leak.findings ?? []} />
-                  <ActionList actions={auditData.revenue_leak.actions ?? []} />
-                  {auditId && auditData.funnel_walk && auditData.funnel_walk.status !== "skipped" && (
-                    <FunnelWalkSection auditId={auditId} walk={auditData.funnel_walk} />
-                  )}
-                  {auditData.revenue_leak.verification && (
-                    <VerificationPanel
-                      report={auditData.revenue_leak.verification}
-                      findings={auditData.revenue_leak.findings ?? []}
-                    />
-                  )}
-                </>
-              )}
-              {auditData.ad_traffic_impact && <AdTrafficImpact data={auditData.ad_traffic_impact} />}
-              {auditData.ai_analysis?.roadmap && <RoadmapSection roadmap={auditData.ai_analysis.roadmap} />}
-              {auditId && operatorKey && <FixAgentsPanel auditId={auditId} />}
-              {auditData.competitor_benchmark && <CompetitorBenchmarkSection data={auditData.competitor_benchmark} />}
-              {auditId && operatorKey && <CompetitorBenchmarkPanel fullAuditId={auditId} />}
-              {auditData.third_party_scripts && <ThirdPartySection data={auditData.third_party_scripts} />}
-              {auditData.tracking_data_quality && <TrackingSection data={auditData.tracking_data_quality} />}
-              {auditData.checkout_flow && <CheckoutSection data={auditData.checkout_flow} />}
-              {auditData.owned_channels && <OwnedChannelsSection data={auditData.owned_channels} />}
-              {auditData.security_compliance && <SecuritySection data={auditData.security_compliance} />}
-              {auditData.cost_analysis && <CostSection data={auditData.cost_analysis} />}
-              {auditData.dns_email && <DnsEmailSection data={auditData.dns_email} />}
-              {auditData.domain_health && <DomainHealthSection data={auditData.domain_health} />}
-              {auditData.rich_results && <RichResultsSection data={auditData.rich_results} />}
-              {auditData.server_side_tracking && <ServerSideTrackingSection data={auditData.server_side_tracking} />}
-              {auditData.product_feeds && <ProductFeedsSection data={auditData.product_feeds} />}
-              {auditData.detected_stack && <DetectedStackSection data={auditData.detected_stack} />}
-              {(auditData.shopify_catalog || auditData.shopify_apps) && (
-                <ShopifyPlatformSection catalog={auditData.shopify_catalog} apps={auditData.shopify_apps} />
-              )}
-              {(auditData.retention || auditData.eu_compliance) && (
-                <RetentionComplianceSection retention={auditData.retention} compliance={auditData.eu_compliance} />
-              )}
-              {auditData.accessibility && <AccessibilitySection data={auditData.accessibility} />}
-              {auditData.cro_observations.length > 0 && <CroSection items={auditData.cro_observations} />}
-              {(auditData.bloat_what_must_go.length > 0 || auditData.ai_analysis?.bloat) && <BloatSection items={auditData.bloat_what_must_go} aiInsight={auditData.ai_analysis?.bloat} />}
-              {auditData.ai_analysis && (auditData.ai_analysis.cro || auditData.ai_analysis.deliverability || auditData.ai_analysis.tech_architecture || auditData.ai_analysis.ad_bounce_revenue) && <AiAnalysisSection data={auditData.ai_analysis} />}
-              {sanityExport && <SanityExportSection data={sanityExport} />}
+              {chapters.length > 0 && <ChapterNav chapters={chapters} />}
+              {chapters.map((c) => (
+                <Chapter key={c.id} id={c.id} title={c.title}>{c.content}</Chapter>
+              ))}
 
               {auditData.methodology_note && (
                 <p className="text-xs text-gray-400 italic text-center px-4">{auditData.methodology_note}</p>
