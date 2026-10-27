@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.funnel.models import AuditScreenshot
 from app.dependencies import get_db, require_operator_key
+from app.fix_agents.shopify_admin import ShopifyAdminError, validate_and_encrypt
 from app.full_audit.client_report import build_client_report
 from app.full_audit.models import FullAudit
 from app.full_audit.overview import FullAuditListResponse, list_full_audits
@@ -32,6 +33,18 @@ async def create_full_audit(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> FullAuditCreateResponse:
+    shop_domain = token_enc = None
+    if body.scan_level == "full-access":
+        if not (body.shopify_shop_domain and body.shopify_access_token):
+            raise HTTPException(
+                status_code=422,
+                detail="Full-access vraagt een Shopify-domein en een read-only Admin API-token.",
+            )
+        try:
+            shop_domain, token_enc, _, _ = await validate_and_encrypt(body.shopify_shop_domain, body.shopify_access_token)
+        except ShopifyAdminError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     audit = FullAudit(
         id=uuid.uuid4(),
         store_url=str(body.store_url),
@@ -47,6 +60,8 @@ async def create_full_audit(
         monthly_ad_spend_eur=body.monthly_ad_spend_eur,
         mobile_share_pct=body.mobile_share_pct,
         mobile_conversion_rate_pct=body.mobile_conversion_rate_pct,
+        shopify_shop_domain=shop_domain,
+        shopify_admin_token_enc=token_enc,
         status="queued",
     )
     db.add(audit)

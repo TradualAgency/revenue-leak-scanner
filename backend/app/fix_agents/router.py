@@ -18,13 +18,7 @@ from app.fix_agents.schemas import (
     FixAgentRunsResponse,
 )
 from app.fix_agents.service import run_fix_agents
-from app.fix_agents.shopify_admin import (
-    ShopifyAdminClient,
-    ShopifyAdminError,
-    encrypt_token,
-    normalize_shop_domain,
-    write_scopes,
-)
+from app.fix_agents.shopify_admin import ShopifyAdminError, validate_and_encrypt
 from app.full_audit.models import FullAudit
 
 router = APIRouter(
@@ -45,14 +39,7 @@ async def put_admin_token(
 ) -> AdminTokenResponse:
     audit = await _get_audit(db, audit_id)
     try:
-        domain = normalize_shop_domain(body.shop_domain)
-        shop_name, scopes = await ShopifyAdminClient(domain, body.access_token).verify()
-        if write := write_scopes(scopes):
-            raise ShopifyAdminError(
-                f"Token heeft schrijfrechten ({', '.join(write)}). Maak een custom app met "
-                "alleen read-scopes (read_themes, read_products)."
-            )
-        token_enc = encrypt_token(body.access_token)
+        domain, token_enc, shop_name, scopes = await validate_and_encrypt(body.shop_domain, body.access_token)
     except ShopifyAdminError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

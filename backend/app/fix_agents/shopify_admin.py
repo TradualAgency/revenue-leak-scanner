@@ -9,6 +9,7 @@ business sitting in this database.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 
 import aiohttp
 from cryptography.fernet import Fernet, InvalidToken
@@ -70,8 +71,51 @@ query ProductsSample($first: Int!) {
 """
 
 
+_CURRENCY_QUERY = """
+query ShopCurrency {
+  shop { currencyCode }
+}
+"""
+
+_SHOPIFYQL_QUERY = """
+query StoreMetrics($q: String!) {
+  shopifyqlQuery(query: $q) {
+    tableData { columns { name } rows }
+    parseErrors
+  }
+}
+"""
+
+# What a read-only token needs: the agents read the theme and products, the full-access
+# audit reads the store's own sales and session numbers.
+REQUIRED_SCOPES = ("read_themes", "read_products", "read_reports")
+
+
 class ShopifyAdminError(Exception):
     pass
+
+
+@dataclass
+class StoreMetrics:
+    """Monthly averages over one window, so sessions x CR x AOV matches the revenue by
+    construction (the leak model derives CR from these three)."""
+    days: int
+    monthly_revenue_eur: float | None = None
+    aov_eur: float | None = None
+    monthly_sessions: int | None = None
+    mobile_share_pct: float | None = None
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def annual_revenue_eur(self) -> float | None:
+        return self.monthly_revenue_eur * 12 if self.monthly_revenue_eur is not None else None
+
+
+def _num(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def normalize_shop_domain(raw: str) -> str:
@@ -100,6 +144,19 @@ def decrypt_token(token_enc: str) -> str:
 
 def write_scopes(scopes: list[str]) -> list[str]:
     return [s for s in scopes if s.startswith("write_") or s.startswith("unauthenticated_write_")]
+
+
+async def validate_and_encrypt(raw_domain: str, access_token: str) -> tuple[str, str, str, list[str]]:
+    """(domain, encrypted token, shop name, scopes) for a token that works and can only
+    read. Raises ShopifyAdminError otherwise."""
+    domain = normalize_shop_domain(raw_domain)
+    shop_name, scopes = await ShopifyAdminClient(domain, access_token).verify()
+    if write := write_scopes(scopes):
+        raise ShopifyAdminError(
+            f"Token heeft schrijfrechten ({', '.join(write)}). Maak een custom app met "
+            f"alleen read-scopes ({', '.join(REQUIRED_SCOPES)})."
+        )
+    return domain, encrypt_token(access_token), shop_name, scopes
 
 
 class ShopifyAdminClient:
@@ -164,3 +221,56 @@ class ShopifyAdminClient:
     async def products_sample(self, first: int = 10) -> list[dict]:
         data = await self._query(_PRODUCTS_QUERY, {"first": max(1, min(first, 25))})
         return (data.get("products") or {}).get("nodes", [])
+
+    async def _shopifyql(self, query: str) -> list[dict]:
+        data = (await self._query(_SHOPIFYQL_QUERY, {"q": query})).get("shopifyqlQuery") or {}
+        if data.get("parseErrors"):
+            raise ShopifyAdminError(f"ShopifyQL: {'; '.join(data['parseErrors'])}")
+        return ((data.get("tableData") or {}).get("rows")) or []
+
+    async def store_metrics(self, days: int = 90) -> StoreMetrics:
+        """Revenue, AOV, sessions and mobile share from the store's own analytics
+        (needs read_reports). Never raises: a metric that can't be read stays None and
+        leaves a warning, so the audit falls back to the operator's numbers."""
+        metrics = StoreMetrics(days=days)
+        months = days / 30
+        window = f"SINCE startOfDay(-{days}d) UNTIL today"
+
+        try:
+            currency = ((await self._query(_CURRENCY_QUERY)).get("shop") or {}).get("currencyCode")
+        except ShopifyAdminError as exc:
+            currency = None
+            metrics.warnings.append(f"Valuta onbekend: {exc}")
+        rate = {"EUR": 1.0, "USD": settings.USD_TO_EUR_RATE}.get(currency or "")
+
+        try:
+            rows = await self._shopifyql(f"FROM sales SHOW total_sales, orders {window}")
+            total = sum(_num(r.get("total_sales")) or 0 for r in rows)
+            orders = sum(_num(r.get("orders")) or 0 for r in rows)
+            if rate is None:
+                metrics.warnings.append(f"Omzet niet overgenomen: winkelvaluta {currency or 'onbekend'} wordt niet omgerekend.")
+            elif total > 0 and orders > 0:
+                metrics.monthly_revenue_eur = round(total * rate / months, 2)
+                metrics.aov_eur = round(total * rate / orders, 2)
+            else:
+                metrics.warnings.append(f"Geen omzet of orders gevonden in de laatste {days} dagen.")
+        except ShopifyAdminError as exc:
+            metrics.warnings.append(f"Omzet niet gelezen: {exc}")
+
+        try:
+            rows = await self._shopifyql(
+                f"FROM sessions SHOW sessions WHERE human_or_bot_session = 'human' "
+                f"GROUP BY session_device_type {window}"
+            )
+            by_device = {str(r.get("session_device_type") or "").lower(): _num(r.get("sessions")) or 0 for r in rows}
+            sessions = sum(by_device.values())
+            if sessions > 0:
+                metrics.monthly_sessions = round(sessions / months)
+                mobile = sum(v for k, v in by_device.items() if "mobile" in k)
+                metrics.mobile_share_pct = round(mobile / sessions * 100, 1)
+            else:
+                metrics.warnings.append(f"Geen sessies gevonden in de laatste {days} dagen.")
+        except ShopifyAdminError as exc:
+            metrics.warnings.append(f"Sessies niet gelezen: {exc}")
+
+        return metrics

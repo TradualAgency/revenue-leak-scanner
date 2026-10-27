@@ -822,6 +822,10 @@ class FullAuditRequest(BaseModel):
     monthly_ad_spend_eur: float | None = None
     mobile_share_pct: float | None = None
     mobile_conversion_rate_pct: float | None = None
+    # Required for scan_level 'full-access': a read-only custom-app Admin token. It is
+    # verified and stored encrypted; the sales/session numbers then come from Shopify.
+    shopify_shop_domain: str | None = None
+    shopify_access_token: str | None = None
 
 
 class FullAuditCreateResponse(BaseModel):

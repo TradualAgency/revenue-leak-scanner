@@ -200,7 +200,7 @@ function AdminTokenForm({ auditId, state, onChange }: {
       </summary>
       <p className="text-xs text-gray-500 mt-2 mb-2">
         Laat de klant een custom app maken (Instellingen › Apps › Apps ontwikkelen) met alleen{" "}
-        <span className="font-mono">read_themes</span> en <span className="font-mono">read_products</span>. Tokens met schrijfrechten worden geweigerd.
+        <span className="font-mono">read_themes</span>, <span className="font-mono">read_products</span> en <span className="font-mono">read_reports</span>. Tokens met schrijfrechten worden geweigerd.
         Met token lezen de agents de echte theme-code.
       </p>
       <div className="flex flex-col sm:flex-row gap-2">

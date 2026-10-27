@@ -17,17 +17,17 @@ const SCAN_LEVELS: { value: ScanLevel; label: string; desc: string }[] = [
   {
     value: "outside-only",
     label: "Outside-only",
-    desc: "Automated — alleen publiek toegankelijke signalen (headers, DOM, PageSpeed, scripts)",
+    desc: "Alleen publiek toegankelijke signalen (headers, DOM, PageSpeed, scripts). Geen agents, laagste kosten.",
   },
   {
     value: "semi",
     label: "Semi",
-    desc: "Automated + handmatig aangevulde velden (bijv. inbox-review, admin inzage)",
+    desc: "Outside-only + de funnel walk (mobiele browser t/m checkout) en de verifier die elke geprijsde finding op de live winkel controleert. Kost Claude-tokens.",
   },
   {
     value: "full-access",
     label: "Full-access",
-    desc: "Volledige admin-toegang — diepste scan inclusief backend data",
+    desc: "Semi + read-only Shopify Admin-token: omzet, AOV, sessies en mobiel aandeel komen uit Shopify (laatste 90 dagen), en de agents lezen theme en producten mee.",
   },
 ];
 
@@ -56,6 +56,10 @@ function FullAuditIntake() {
   const [monthlyAdSpend, setMonthlyAdSpend] = useState("");
   const [mobileShare, setMobileShare] = useState("");
   const [mobileConversionRate, setMobileConversionRate] = useState("");
+  const [shopDomain, setShopDomain] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const fullAccess = scanLevel === "full-access";
+  const missingToken = fullAccess && (!shopDomain.trim() || !accessToken.trim());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +89,8 @@ function FullAuditIntake() {
         monthly_ad_spend_eur: parsedAdSpend && parsedAdSpend > 0 ? parsedAdSpend : undefined,
         mobile_share_pct: parsedMobileShare && parsedMobileShare > 0 && parsedMobileShare <= 100 ? parsedMobileShare : undefined,
         mobile_conversion_rate_pct: parsedMobileCr && parsedMobileCr > 0 ? parsedMobileCr : undefined,
+        shopify_shop_domain: fullAccess ? shopDomain.trim() : undefined,
+        shopify_access_token: fullAccess ? accessToken.trim() : undefined,
       });
       navigate(`/full-audit/${res.id}`);
     } catch (err) {
@@ -174,6 +180,40 @@ function FullAuditIntake() {
                 ))}
               </div>
             </div>
+
+            {fullAccess && (
+              <div className="flex flex-col gap-4 border border-[#c5a96f]/40 bg-[#c5a96f]/5 rounded-xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Shopify-domein *</label>
+                  <input
+                    type="text"
+                    required
+                    value={shopDomain}
+                    onChange={(e) => setShopDomain(e.target.value)}
+                    placeholder="merk.myshopify.com"
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Admin API access token *</label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="off"
+                    value={accessToken}
+                    onChange={(e) => setAccessToken(e.target.value)}
+                    placeholder="shpat_..."
+                    className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-[#c5a96f]/40 focus:border-[#c5a96f]"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Custom app met alleen <span className="font-mono">read_themes</span>,{" "}
+                    <span className="font-mono">read_products</span> en <span className="font-mono">read_reports</span>.
+                    Tokens met schrijfrechten worden geweigerd. Laat de omzetvelden hieronder leeg: die komen uit
+                    Shopify. Wat je wél invult, gaat voor.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-700">Industrie</label>
@@ -302,7 +342,7 @@ function FullAuditIntake() {
 
             <button
               type="submit"
-              disabled={loading || !storeUrl.trim()}
+              disabled={loading || !storeUrl.trim() || missingToken}
               className="bg-tradual-accent text-tradual-primary disabled:opacity-50 font-medium px-8 py-3 hover:opacity-90 transition-opacity text-sm mt-2"
             >
               {loading ? "Audit starten..." : "Start Full Audit →"}

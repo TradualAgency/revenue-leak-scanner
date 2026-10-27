@@ -300,6 +300,38 @@ def cancel_running_audit(audit_id: uuid.UUID) -> bool:
     return True
 
 
+def agents_enabled(scan_level: str) -> bool:
+    """Semi and full-access always run the funnel walk and the verifier; outside-only
+    follows the FUNNEL_AGENT_ENABLED / VERIFIER_ENABLED settings."""
+    return scan_level in ("semi", "full-access")
+
+
+async def fill_from_shopify(audit: FullAudit) -> list[str]:
+    """Full-access: take revenue, AOV, sessions and mobile share from the store's own
+    Shopify analytics. Only empty fields are filled — what the operator typed is a
+    deliberate correction. Returns the lines for `pipeline_warnings`."""
+    if audit.scan_level != "full-access":
+        return []
+    admin = admin_client_for(audit.shopify_shop_domain, audit.shopify_admin_token_enc)
+    if admin is None:
+        return ["shopify_metrics: geen bruikbaar Admin-token; handmatige cijfers of defaults gebruikt."]
+    metrics = await admin.store_metrics()
+    filled: list[str] = []
+    for column, value, label in (
+        ("estimated_annual_revenue_eur", metrics.annual_revenue_eur, "jaaromzet €{:,.0f}"),
+        ("aov_eur", metrics.aov_eur, "AOV €{:,.2f}"),
+        ("monthly_sessions", metrics.monthly_sessions, "{:,} sessies/mnd"),
+        ("mobile_share_pct", metrics.mobile_share_pct, "{}% mobiel"),
+    ):
+        if value is not None and getattr(audit, column) is None:
+            setattr(audit, column, value)
+            filled.append(label.format(value))
+    notes = [f"shopify_metrics: {w}"[:300] for w in metrics.warnings]
+    if filled:
+        notes.insert(0, f"Bedrijfscijfers uit Shopify Admin (laatste {metrics.days} dagen): {', '.join(filled)}."[:300])
+    return notes
+
+
 async def run_full_audit(audit_id: uuid.UUID) -> None:
     task = asyncio.current_task()
     if task is not None:
@@ -325,6 +357,15 @@ async def _run_full_audit(audit_id: uuid.UUID) -> None:
             audit.status = "processing"
             await db.commit()
             store_url = audit.store_url
+            agents_on = agents_enabled(audit.scan_level)
+
+            # 0. Full-access: the store's own numbers before anything is priced.
+            try:
+                shopify_notes = await fill_from_shopify(audit)
+            except Exception as exc:  # never lose the audit over the analytics lookup
+                logger.warning("Shopify metrics failed for %s: %s", audit_id, exc)
+                shopify_notes = [f"shopify_metrics: {type(exc).__name__}: {exc}"[:300]]
+            await db.commit()
 
             # 1. Scrape
             scrape_result = await scrape_store(store_url)
@@ -361,14 +402,14 @@ async def _run_full_audit(audit_id: uuid.UUID) -> None:
                 detect_shopify_apps(pages),            # 19
                 detect_retention(pages),               # 20
                 analyze_eu_compliance(pages),           # 21
-                walk_funnel(audit_id, store_url, pages), # 22 — funnel agent (mobile browser)
+                walk_funnel(audit_id, store_url, pages, force=agents_on), # 22 — funnel agent (mobile browser)
                 return_exceptions=True,
             )
 
             # Everything below degrades instead of failing the audit: a broken analyzer or
             # rollup becomes None plus a line in `pipeline_warnings`, so the operator
             # sees what's missing instead of losing the whole (paid-for) run.
-            pipeline_warnings: list[str] = []
+            pipeline_warnings: list[str] = list(shopify_notes)
 
             def _record(step: str, exc: BaseException) -> None:
                 logger.warning("Full audit step %s failed for %s: %s", step, audit_id, exc)
@@ -603,7 +644,11 @@ async def _run_full_audit(audit_id: uuid.UUID) -> None:
             # everything downstream (summary, AI skills, Sanity) sees the checked euros.
             verification = await _astep(
                 "verifier",
-                run_verifier(audit_data, admin=admin_client_for(audit.shopify_shop_domain, audit.shopify_admin_token_enc)),
+                run_verifier(
+                    audit_data,
+                    admin=admin_client_for(audit.shopify_shop_domain, audit.shopify_admin_token_enc),
+                    force=agents_on,
+                ),
             )
             if verification:
                 pipeline_warnings.extend(f"verifier: {err}"[:300] for err in verification.errors)

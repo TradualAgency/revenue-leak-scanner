@@ -71,6 +71,9 @@ export interface FullAuditRequest {
   monthly_ad_spend_eur?: number;
   mobile_share_pct?: number;
   mobile_conversion_rate_pct?: number;
+  /** Required for scan_level "full-access": a read-only custom-app Admin API token. */
+  shopify_shop_domain?: string;
+  shopify_access_token?: string;
 }
 
 export interface FullAuditCreateResponse {
