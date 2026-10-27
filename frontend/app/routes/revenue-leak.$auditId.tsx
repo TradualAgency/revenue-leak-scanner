@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
-import {
-  NextStepsSection,
-  relevantStepsFromRevenueLeak,
-} from "~/components/NextSteps";
 import ActionList from "~/components/report/ActionList";
 import AdTrafficImpact from "~/components/report/AdTrafficImpact";
 import AssumptionsSection from "~/components/report/AssumptionsSection";
 import FunnelWalkSection from "~/components/report/FunnelWalkSection";
+import GoodSignals from "~/components/report/GoodSignals";
 import HeroFigure from "~/components/report/HeroFigure";
 import Notice from "~/components/report/Notice";
 import ReportCard from "~/components/report/ReportCard";
@@ -16,11 +13,11 @@ import ReportSpinner from "~/components/report/ReportSpinner";
 import RoadmapSection from "~/components/report/RoadmapSection";
 import SectionLabel from "~/components/report/SectionLabel";
 import StatusPill from "~/components/report/StatusPill";
+import TopLeaks from "~/components/report/TopLeaks";
 import { getClientAuditReport, getFullAuditStatus } from "~/lib/api";
 import { conflictTitle, eur, eurRange, eurRangeParts, severityByShare } from "~/lib/format";
 import type {
   ClientAuditReport,
-  ClientCeoTrigger,
   ClientCitation,
   ClientRevenueLeakReport,
   DataConflict,
@@ -177,7 +174,7 @@ function MetricRow({
           </div>
           <div className="text-right flex-shrink-0">
             {m.verify_manually ? (
-              <p className="text-[10px] text-gray-500 italic border border-gray-200 rounded px-1.5 py-0.5 inline-block">handmatig verifiëren</p>
+              <p className="text-[10px] text-gray-500 italic border border-gray-200 rounded px-1.5 py-0.5 inline-block">nog te bevestigen</p>
             ) : low != null && high != null ? (
               <>
                 <p className={`text-sm font-bold tabular-nums ${severity === "critical" ? "text-[#EF4444]" : severity === "warning" ? "text-amber-600" : "text-gray-400"}`}>
@@ -242,7 +239,7 @@ function LayerCard({
               </span>
             )}
             {layer.unpriced_finding_count != null && layer.unpriced_finding_count > 0 && (
-              <span className="text-[10px] text-gray-500">+{layer.unpriced_finding_count} te verifiëren</span>
+              <span className="text-[10px] text-gray-500">+{layer.unpriced_finding_count} nog te bevestigen</span>
             )}
           </div>
           <p className="text-xs text-gray-500 mt-0.5 leading-snug">{layer.core_question}</p>
@@ -260,28 +257,6 @@ function LayerCard({
         </div>
       )}
     </ReportCard>
-  );
-}
-
-function TriggerCard({ t }: { t: ClientCeoTrigger }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={`border rounded-2xl shadow-sm overflow-hidden transition-colors ${t.triggered ? "border-red-200 bg-red-50" : "border-gray-100 bg-white"}`}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full text-left px-4 py-3 flex items-start gap-3">
-        <span className={`mt-0.5 flex-shrink-0 w-2 h-2 rounded-full ${t.triggered ? "bg-[#EF4444]" : "bg-gray-300"}`} />
-        <div className="flex-1 min-w-0">
-          <p className={`text-xs font-semibold ${t.triggered ? "text-gray-900" : "text-gray-500"}`}>{t.kpi}</p>
-          {t.triggered && <p className="text-[11px] text-gray-600 mt-0.5">{t.what_ceo_sees}</p>}
-        </div>
-        <span className="text-gray-400 text-xs flex-shrink-0">{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <div className={`border-t px-4 py-3 space-y-2 ${t.triggered ? "border-red-200" : "border-gray-100"}`}>
-          <p className="text-xs text-gray-700 leading-relaxed">{t.real_meaning}</p>
-          {t.benchmark && <p className="text-[11px] text-gray-500">Benchmark: {t.benchmark}</p>}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -333,7 +308,7 @@ function TotalsTable({ data }: { data: ClientRevenueLeakReport }) {
         </tbody>
         <tfoot className="border-t border-gray-200">
           <tr className="bg-gray-50">
-            <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-500">Directe lekkage ({isV2 ? "L1+L3" : "L1+L2+L3"})</td>
+            <td colSpan={2} className="py-2.5 px-3 text-xs text-gray-500">{isV2 ? "Totaal geschat verlies" : "Directe lekkage (L1+L2+L3)"}</td>
             <td className="py-2.5 px-3 font-bold text-[#EF4444] tabular-nums whitespace-nowrap">
               {isV2 ? eurRange(direct.low, direct.high) : eur(legacyDirectMonthly)}
             </td>
@@ -444,8 +419,6 @@ export default function RevenueLeakAuditPage() {
     );
   }
 
-  const triggeredKpis = data.ceo_triggers.filter((t) => t.triggered);
-  const allKpis = data.ceo_triggers;
   const { low: totalLow, high: totalHigh } = reportMonthlyRange(data);
   const { low: totalAnnualLow, high: totalAnnualHigh } = reportAnnualRange(data);
   const heroParts = eurRangeParts(totalLow, totalHigh);
@@ -456,26 +429,42 @@ export default function RevenueLeakAuditPage() {
   const serankingTraffic = report.seranking_traffic;
   const roadmap = report.roadmap;
   const citations = Object.fromEntries(report.citations.map((c) => [c.key, c]));
+  const scannedOn = report.completed_at
+    ? new Date(report.completed_at).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })
+    : null;
 
+  // Story first (cost → top leaks → what goes well → plan), every number's working in
+  // the appendix. The CEO-trigger framework stays out: it's sales framing, not findings.
   return (
     <ReportShell>
       <div className="max-w-3xl mx-auto space-y-10">
 
-        {/* Hero — the report type and store URL used to live in a custom top bar */}
+        {/* 1. What it costs */}
         <div>
           <SectionLabel>Rapport voor</SectionLabel>
           <h1 className="text-3xl font-bold text-gray-900 mb-1" style={{ fontFamily: "var(--font-serif)" }}>
             {companyName || storeUrl}
           </h1>
-          <p className="text-sm text-gray-500 truncate">Revenue Leak Audit™ · {storeUrl}</p>
+          <p className="text-sm text-gray-500 truncate">Revenue Leak Audit · {storeUrl}</p>
           {totalHigh > 0 ? (
             <div className="mt-6 flex flex-wrap gap-6">
               <HeroFigure parts={heroParts} size="xl" label="geschat verlies per maand" />
               <HeroFigure parts={heroAnnualParts} size="lg" label="per jaar" />
             </div>
           ) : (
-            <p className="text-gray-500 mt-4 text-sm">Geen direct meetbaar verlies gedetecteerd — zie strategische signalen in Laag 5.</p>
+            <p className="text-gray-500 mt-4 text-sm">Geen direct meetbaar verlies gevonden.</p>
           )}
+          <div className="flex flex-wrap items-center gap-2 mt-5">
+            {scannedOn && <StatusPill tone="muted" size="md">Gemeten op {scannedOn}</StatusPill>}
+            {serankingTraffic ? (
+              <StatusPill tone="ok" size="md">
+                Bezoekersdata via SE Ranking — {(serankingTraffic.monthly_organic_sessions + serankingTraffic.monthly_paid_sessions).toLocaleString("nl-NL")}/mnd
+              </StatusPill>
+            ) : (
+              <StatusPill tone="warning" size="md">Bezoekersaantal geschat</StatusPill>
+            )}
+            {report.funnel_walk && <StatusPill tone="ok" size="md">Checkout zelf doorlopen</StatusPill>}
+          </div>
         </div>
 
         {roadmap?.executive_summary && (
@@ -490,80 +479,65 @@ export default function RevenueLeakAuditPage() {
           </ReportCard>
         )}
 
-        {/* Data conflicts — surfaced before the euros so they're read first */}
-        <DataConflictBanner conflicts={conflicts} />
+        {/* 2. Top leaks, with evidence */}
+        <TopLeaks auditId={report.id} actions={data.actions ?? []} findings={data.findings ?? []} />
 
-        <ActionList actions={data.actions ?? []} />
+        {/* 3. What goes well */}
+        <GoodSignals layers={data.layers} />
 
-        {report.funnel_walk && <FunnelWalkSection auditId={report.id} walk={report.funnel_walk} />}
-
-        {/* CEO Triggers */}
-        {allKpis.length > 0 && (
-          <div>
-            <SectionLabel>
-              {triggeredKpis.length > 0 ? `${triggeredKpis.length} CEO-signalen herkend` : "CEO Trigger KPI's"}
-            </SectionLabel>
-            <div className="space-y-2">
-              {allKpis.map((t) => (
-                <TriggerCard key={t.kpi} t={t} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {report.ad_traffic_impact && <AdTrafficImpact data={report.ad_traffic_impact} />}
-
-        {/* De 5 Lagen */}
-        <div>
-          <SectionLabel>De 5 Meetlagen</SectionLabel>
-          <div className="space-y-2">
-            {data.layers.map((layer) => (
-              <LayerCard key={layer.layer} layer={layer} funnelRevenue={funnelRevenue} citations={citations} />
-            ))}
-          </div>
-        </div>
-
-        {/* Revenue Leak Score Totaaloverzicht */}
-        <div>
-          <SectionLabel>Revenue Leak Score™ — Totaaloverzicht</SectionLabel>
-          <TotalsTable data={data} />
-        </div>
-
+        {/* 4. How we fix it */}
         {roadmap && <RoadmapSection roadmap={roadmap} />}
 
-        <ModelWarnings warnings={warnings} />
-
-        {report.assumptions.length > 0 ? (
-          <AssumptionsSection
-            assumptions={report.assumptions}
-            citations={report.citations}
-            methodologyNote={report.methodology_note}
-          />
-        ) : serankingTraffic ? (
-          <div className="flex items-center gap-2">
-            <StatusPill tone="ok" size="md">
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
-              Gemeten via SE Ranking — {(serankingTraffic.monthly_organic_sessions + serankingTraffic.monthly_paid_sessions).toLocaleString("nl-NL")} bezoekers/mnd
-            </StatusPill>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <StatusPill tone="warning" size="md">
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
-              Schatting — traffic niet beschikbaar via SE Ranking
-            </StatusPill>
-          </div>
-        )}
-
-        {/* Next steps */}
-        <NextStepsSection relevant={relevantStepsFromRevenueLeak(data)} />
-
-        {/* Legacy (pre-funnel) reports have no assumptions table — keep their notes */}
-        {report.assumptions.length === 0 && data.methodology_note && (
-          <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.methodology_note}</p>
-        )}
-
         <Cta />
+
+        {/* 5. Appendix — everything behind the numbers, closed by default (open in print) */}
+        <details className="report-appendix group">
+          <summary className="cursor-pointer list-none flex items-center justify-between border-t border-gray-200 pt-6">
+            <span className="text-lg font-semibold text-gray-900" style={{ fontFamily: "var(--font-serif)" }}>
+              Bijlage: volledige onderbouwing
+            </span>
+            <span className="text-xs text-gray-500 group-open:hidden">Openen ▼</span>
+            <span className="text-xs text-gray-500 hidden group-open:inline">Sluiten ▲</span>
+          </summary>
+          <div className="space-y-10 mt-6">
+            <DataConflictBanner conflicts={conflicts} />
+
+            <ActionList actions={data.actions ?? []} />
+
+            {report.funnel_walk && <FunnelWalkSection auditId={report.id} walk={report.funnel_walk} />}
+
+            {report.ad_traffic_impact && <AdTrafficImpact data={report.ad_traffic_impact} />}
+
+            <div>
+              <SectionLabel>Alle metingen per meetlaag</SectionLabel>
+              <div className="space-y-2">
+                {data.layers.map((layer) => (
+                  <LayerCard key={layer.layer} layer={layer} funnelRevenue={funnelRevenue} citations={citations} />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <SectionLabel>Totaal per meetlaag</SectionLabel>
+              <TotalsTable data={data} />
+            </div>
+
+            <ModelWarnings warnings={warnings} />
+
+            {report.assumptions.length > 0 && (
+              <AssumptionsSection
+                assumptions={report.assumptions}
+                citations={report.citations}
+                methodologyNote={report.methodology_note}
+              />
+            )}
+
+            {/* Legacy (pre-funnel) reports have no assumptions table — keep their notes */}
+            {report.assumptions.length === 0 && data.methodology_note && (
+              <p className="text-[11px] text-gray-500 italic leading-relaxed">{data.methodology_note}</p>
+            )}
+          </div>
+        </details>
       </div>
     </ReportShell>
   );

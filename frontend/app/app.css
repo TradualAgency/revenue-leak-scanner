@@ -42,6 +42,17 @@ body {
   -webkit-print-color-adjust: exact;
 }
 
+/* The client report's appendix is a closed <details> on screen; a printed/PDF report
+   should carry the full working, so force it open. */
+@media print {
+  .report-appendix > :not(summary) {
+    display: block !important;
+  }
+  .report-appendix > summary span:not(:first-child) {
+    display: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-video {
     display: none;
