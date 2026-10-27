@@ -83,7 +83,7 @@ function AgentFindings() {
   // ?run=<id> picks a run; ?run=auto the automatic result; default: newest manual run, else the automatic one.
   const requested = searchParams.get("run");
   const selectedRun = requested && requested !== AUTO ? agentRuns.find((r) => r.id === requested) ?? null : null;
-  const showAuto = requested === AUTO || (!requested && agentRuns.length === 0);
+  const showAuto = !!info?.automatic && (requested === AUTO || (!requested && agentRuns.length === 0));
   const current: AgentRun | null = showAuto ? null : selectedRun ?? agentRuns[0] ?? null;
 
   async function start() {
@@ -138,6 +138,7 @@ function AgentFindings() {
         >
           {starting ? "Starten…" : anyActive ? "Bezig…" : agentRuns.length ? "Opnieuw draaien" : "Start agent"}
         </button>
+        {(agentRuns.length > 0 || info.automatic) && (
         <select
           value={showAuto ? AUTO : current?.id ?? ""}
           onChange={(e) => setSearchParams({ run: e.target.value })}
@@ -151,6 +152,7 @@ function AgentFindings() {
           ))}
           {info.automatic && <option value={AUTO}>Automatisch bij de audit</option>}
         </select>
+        )}
         {!info.automatic && agentRuns.length === 0 && <span className="text-xs text-gray-400">Nog geen runs.</span>}
         {isFixAgent(agent) && !runs?.has_admin_token && (
           <span className="text-xs text-gray-500">
@@ -198,9 +200,12 @@ function RunView({ run, auditId, findings }: { run: AgentRun; auditId: string; f
         <ReportCard className="p-5"><p className="text-sm text-red-600">Mislukt: {run.error_message}</p></ReportCard>
       )}
       {run.result && <AgentResult agent={run.agent} result={run.result} auditId={auditId} findings={findings} />}
-      <p className="text-[11px] text-gray-400">
-        {run.model} · {(run.input_tokens ?? 0).toLocaleString("nl-NL")} in / {(run.output_tokens ?? 0).toLocaleString("nl-NL")} uit
-      </p>
+      {/* The verifier and funnel views already show model and tokens themselves. */}
+      {isFixAgent(run.agent) && (
+        <p className="text-[11px] text-gray-400">
+          {run.model} · {(run.input_tokens ?? 0).toLocaleString("nl-NL")} in / {(run.output_tokens ?? 0).toLocaleString("nl-NL")} uit
+        </p>
+      )}
     </div>
   );
 }
