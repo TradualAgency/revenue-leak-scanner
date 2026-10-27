@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
 
@@ -8,30 +9,62 @@ from app.full_audit.page_sampling import PAGE_LABELS as _PAGE_LABELS
 from app.full_audit.page_sampling import sample_pages_by_type as _sample_pages_by_type
 from app.full_audit.schemas import CheckoutFlow, CroObservation, Performance, RichResultsHealth
 
-_REVIEW_PLATFORM_DOMAINS = [
-    "trustpilot.com", "kiyoh.com", "feedbackcompany.com", "trustedshops",
-    "judge.me", "loox.io", "yotpo.com", "reviews.io", "okendo", "stamped.io",
-    "reviewmeester.nl", "webwinkelkeur.nl", "klantenvertellen.nl",
-    "verified-reviews.com", "shopify.com/product-reviews",
-]
 
-# Review apps that render through Shopify theme app blocks / app extensions. Their
-# widgets often have no third-party src at all (assets come from cdn.shopify.com/
-# extensions/...), so the domain check above misses them; their markup and asset
-# names don't.
-_REVIEW_APP_MARKERS = [
-    "jdgm-", "judgeme",                 # Judge.me
-    "loox-rating", "loox-reviews",      # Loox
-    "okeReviews", "oke-reviews",        # Okendo
-    "yotpo-widget", "yotpo-main-widget",
-    "stamped-product-reviews", "stamped-main-widget",
-    "junip-",                           # Junip
-    "spr-badge", "shopify-product-reviews",
-]
+@dataclass(frozen=True)
+class ReviewPlatform:
+    # Matched in src/href of script/iframe/a/img/link tags and inside inline <script> text
+    # (widgets bootstrapped by a loader snippet).
+    domains: tuple[str, ...] = ()
+    # Matched in the raw HTML: widget class names and custom elements, i.e. markup that only
+    # exists when the widget renders. Never an app slug or a bare section id: an installed
+    # app whose block renders nothing (Plumelle's empty `__etrusted_review_badge` sections
+    # on /nl) is not social proof.
+    markers: tuple[str, ...] = ()
+
+
+_REVIEW_PLATFORMS: dict[str, ReviewPlatform] = {
+    # Third-party review and trust widgets
+    "Trustpilot": ReviewPlatform(("trustpilot.com",), ("trustpilot-widget",)),
+    "Trusted Shops": ReviewPlatform(
+        ("trustedshops", "etrusted.com"), ("<etrusted-widget", "etrusted-review-badge__"),
+    ),
+    "Kiyoh": ReviewPlatform(("kiyoh.com",)),
+    "Klantenvertellen": ReviewPlatform(("klantenvertellen.nl",)),
+    "Feedback Company": ReviewPlatform(("feedbackcompany.com",), ("__fbcw__",)),
+    "WebwinkelKeur": ReviewPlatform(("webwinkelkeur.nl",)),
+    "Reviewmeester": ReviewPlatform(("reviewmeester.nl",)),
+    "Reviews.io": ReviewPlatform(("reviews.io", "reviews.co.uk")),
+    "Feefo": ReviewPlatform(("feefo.com",)),
+    "eKomi": ReviewPlatform(("ekomi.de", "ekomi.com", "ekomiapps")),
+    "Google Customer Reviews": ReviewPlatform(markers=("ratingbadge",)),
+    "Bazaarvoice": ReviewPlatform(("bazaarvoice.com",), ("data-bv-show",)),
+    "PowerReviews": ReviewPlatform(("powerreviews.com",)),
+    "Lipscore": ReviewPlatform(("lipscore.com",), ("lipscore-rating", "lipscore-review")),
+    "Shopper Approved": ReviewPlatform(("shopperapproved.com",)),
+    "Verified Reviews": ReviewPlatform(("verified-reviews.com", "avis-verifies.com", "netreviews")),
+    # Shopify review apps. Their widgets often render through theme app blocks with no
+    # third-party src at all (assets from cdn.shopify.com/extensions/...), so the markup
+    # is what gives them away.
+    "Judge.me": ReviewPlatform(("judge.me",), ("jdgm-", "judgeme")),
+    "Loox": ReviewPlatform(("loox.io",), ("loox-rating", "loox-reviews")),
+    "Okendo": ReviewPlatform(("okendo",), ("okeReviews", "oke-reviews")),
+    "Yotpo": ReviewPlatform(("yotpo.com",), ("yotpo-widget", "yotpo-main-widget")),
+    "Stamped": ReviewPlatform(("stamped.io",), ("stamped-product-reviews", "stamped-main-widget")),
+    "Junip": ReviewPlatform(("junip.co",), ("junip-",)),
+    "Shopify Product Reviews": ReviewPlatform(("shopify.com/product-reviews",), ("spr-badge", "shopify-product-reviews")),
+    "Klaviyo Reviews": ReviewPlatform(markers=("klaviyo-star-rating-widget", "klaviyo-reviews-")),
+    "Fera": ReviewPlatform(("fera.ai",)),
+    "Ali Reviews": ReviewPlatform(("alireviews",)),
+    "Rivyo": ReviewPlatform(("rivyo",)),
+    "Opinew": ReviewPlatform(("opinew.com",)),
+    "Ryviu": ReviewPlatform(("ryviu",)),
+}
+
+_URL_IN_SCRIPT = re.compile(r"""(?:https?:)?//[\w.-]+\.[a-z]{2,}[^\s"'<>)]*""", re.IGNORECASE)
 
 _RATING_PATTERN = re.compile(
-    r"""(\d[.,]?\d?)\s*(sterren|stars|\/5|\/10)|   # 4.8 sterren, 4/5
-        \b(\d{2,})\s+(reviews?|beoordelingen|ervaringen|klanten)\b""",
+    r"""(\d[.,]?\d?)\s*(sterren|stars|sterne|étoiles|stelle|estrellas|\/5|\/10)|   # 4.8 sterren, 4,8 Sterne, 4/5
+        \b(\d{2,})\s+(reviews?|beoordelingen|ervaringen|klanten|bewertungen|rezensionen|avis|recensioni|reseñas|opiniones)\b""",
     re.VERBOSE | re.IGNORECASE,
 )
 
@@ -53,22 +86,25 @@ _SP_EST_IMPACT = {
 
 def _detect_social_proof(html: str, has_aggregate_rating: bool = False) -> tuple[bool, str | None]:
     """Return (detected, evidence). Three cascading signals:
-    1. Known review-platform domain in src/href attributes
+    1. Known review platform (_REVIEW_PLATFORMS): widget domain or rendered markup
     2. AggregateRating JSON-LD (passed in from rich_results)
     3. Rating-number + label pattern in text (strict regex, not loose keywords)
     """
-    # Signal 1: review platform script/iframe
+    # Signal 1: a review platform's widget script/iframe/link, or its rendered markup
     soup = BeautifulSoup(html, "lxml")
-    for tag in soup.find_all(["script", "iframe", "a", "img"]):
-        src = str(tag.get("src", "")) + str(tag.get("href", "")) + str(tag.get("data-src", ""))
-        for domain in _REVIEW_PLATFORM_DOMAINS:
-            if domain in src.lower():
-                return True, f"{domain} widget gedetecteerd"
-
-    # Signal 1b: review app rendered through a Shopify app block / extension
-    for marker in _REVIEW_APP_MARKERS:
-        if marker in html:
-            return True, f"review-app gedetecteerd ({marker})"
+    sources: list[str] = []
+    for tag in soup.find_all(["script", "iframe", "a", "img", "link"]):
+        sources.append((str(tag.get("src", "")) + str(tag.get("href", "")) + str(tag.get("data-src", ""))).lower())
+        # URLs in inline loader snippets count, bare words don't: themes ship code like
+        # `var okendoProduct = null` for apps that aren't installed. JSON-LD doesn't
+        # either (a `sameAs` profile link isn't a widget).
+        if tag.name == "script" and not tag.get("src") and "json" not in str(tag.get("type", "")):
+            sources.extend(u.lower() for u in _URL_IN_SCRIPT.findall(tag.get_text()))
+    for name, platform in _REVIEW_PLATFORMS.items():
+        if any(domain in src for domain in platform.domains for src in sources):
+            return True, f"{name} widget gedetecteerd"
+        if any(marker in html for marker in platform.markers):
+            return True, f"{name} widget gedetecteerd"
 
     # Signal 2: structured data — site-wide flag, or a rating nested in this page's JSON-LD
     if has_aggregate_rating or any(

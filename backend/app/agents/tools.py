@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import aiohttp
 from bs4 import BeautifulSoup
 
-from app.analysis.scraper import HEADERS, fetch_page
+from app.analysis.scraper import fetch_page, headers_for
 from app.config import settings
 from app.fix_agents.shopify_admin import ShopifyAdminClient, ShopifyAdminError
 from app.full_audit.analyzers.performance import analyze_performance
@@ -150,9 +150,10 @@ def _same_store(ctx: ToolContext, url: str) -> bool:
 async def _get_page(ctx: ToolContext, url: str) -> dict:
     if url not in ctx.page_cache:
         timeout = aiohttp.ClientTimeout(total=settings.SCRAPER_TIMEOUT_SECONDS)
-        async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
-            html, headers, status, cookies = await fetch_page(session, url)
-        ctx.page_cache[url] = {"url": url, "html": html, "headers": headers, "set_cookies": cookies, "status": status, "load_time_ms": 0}
+        # The audited storefront's language, so `/de` isn't redirected to its `/nl` twin.
+        async with aiohttp.ClientSession(headers=headers_for(ctx.audit.store_url), timeout=timeout) as session:
+            html, headers, status, cookies, final_url = await fetch_page(session, url)
+        ctx.page_cache[url] = {"url": url, "final_url": final_url, "html": html, "headers": headers, "set_cookies": cookies, "status": status, "load_time_ms": 0}
     return ctx.page_cache[url]
 
 
@@ -187,12 +188,13 @@ async def fetch_page_tool(ctx: ToolContext, url: str, mode: str, offset: int = 0
     page = await _get_page(ctx, url)
     if not page["html"]:
         return {"status": page["status"], "error": "Pagina kon niet worden opgehaald."}
+    meta = {"status": page["status"], "final_url": page["final_url"]}
     if mode == "scripts":
-        return {"status": page["status"], "scripts": _scripts_view(page["html"])}
+        return {**meta, "scripts": _scripts_view(page["html"])}
     if mode == "text":
         text = BeautifulSoup(page["html"], "lxml").get_text("\n", strip=True)
-        return {"status": page["status"], **_chunk(text, offset)}
-    return {"status": page["status"], **_chunk(page["html"], offset)}
+        return {**meta, **_chunk(text, offset)}
+    return {**meta, **_chunk(page["html"], offset)}
 
 
 async def run_analyzer(ctx: ToolContext, analyzer: str, url: str) -> Any:

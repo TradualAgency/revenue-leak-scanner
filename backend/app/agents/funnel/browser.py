@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+from app.analysis.scraper import url_locale
+
 _SIGS_PATH = Path(__file__).parents[2] / "full_audit" / "data" / "tracker_signatures.json"
 
 # Collect endpoints that aren't in the script patterns of tracker_signatures.json.
@@ -131,7 +133,10 @@ async def open_session(store_url: str, *, headless: bool = True) -> BrowserSessi
     session.playwright = await async_playwright().start()
     device = session.playwright.devices["iPhone 14"]
     session.browser = await session.playwright.chromium.launch(headless=headless)
-    session.context = await session.browser.new_context(**device, locale="nl-NL", timezone_id="Europe/Amsterdam")
+    # Browse in the storefront's own language, so `/de` isn't redirected to `/nl`.
+    lang, _, region = (url_locale(store_url) or "nl-nl").partition("-")
+    locale = f"{lang}-{region.upper()}" if region else lang
+    session.context = await session.browser.new_context(**device, locale=locale, timezone_id="Europe/Amsterdam")
 
     async def guard(route):
         request = route.request

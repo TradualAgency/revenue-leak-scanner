@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -21,6 +22,37 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "nl-NL,nl;q=0.9,en;q=0.8",
 }
+
+# Storefronts with a language path (`/de`, `/en-gb`) often redirect on Accept-Language:
+# a Dutch header turned `plumelle.com/de` into `/nl`, and the German store was then
+# audited on its Dutch twin. So the header follows the locale in the URL.
+_LANGUAGES = {
+    "nl", "de", "fr", "en", "es", "it", "pt", "pl", "da", "sv", "no", "nb", "fi", "cs",
+    "sk", "hu", "ro", "el", "tr", "bg", "hr", "sl", "et", "lv", "lt", "ja", "zh", "ko",
+}
+_LOCALE_SEGMENT = re.compile(r"^([a-z]{2})(?:-([a-z]{2}))?$")
+
+
+def url_locale(url: str) -> str | None:
+    """The locale prefix of a storefront URL (`/de/...` -> "de", `/en-gb` -> "en-gb"), or None."""
+    segment = urlparse(url).path.strip("/").split("/", 1)[0].lower()
+    m = _LOCALE_SEGMENT.match(segment)
+    return segment if m and m.group(1) in _LANGUAGES else None
+
+
+def accept_language_for(url: str) -> str:
+    locale = url_locale(url)
+    if not locale:
+        return HEADERS["Accept-Language"]
+    lang, _, region = locale.partition("-")
+    parts = [f"{lang}-{region.upper()}", f"{lang};q=0.9"] if region else [lang]
+    if lang != "en":
+        parts.append("en;q=0.8")
+    return ",".join(parts)
+
+
+def headers_for(url: str) -> dict[str, str]:
+    return {**HEADERS, "Accept-Language": accept_language_for(url)}
 
 # Markers of a bot-challenge or interstitial page. Only trusted on a *small* page:
 # Cloudflare and Imperva also inject scripts with similar names into normal storefront
@@ -59,18 +91,19 @@ def set_cookie_text(page: dict) -> str:
 
 async def fetch_page(
     session: aiohttp.ClientSession, url: str,
-) -> tuple[str, dict[str, str], int, list[str]]:
-    """Fetch a single page. Returns (html, headers, status_code, set_cookies).
+) -> tuple[str, dict[str, str], int, list[str], str]:
+    """Fetch a single page. Returns (html, headers, status_code, set_cookies, final_url).
 
     `set_cookies` keeps every Set-Cookie header: `dict(resp.headers)` keeps only one,
-    and the cookie-based detectors (ESP, Meta CAPI) need all of them."""
+    and the cookie-based detectors (ESP, Meta CAPI) need all of them. `final_url` is
+    where redirects ended, which is the page the HTML actually belongs to."""
     try:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=settings.SCRAPER_TIMEOUT_SECONDS)) as resp:
             html = await resp.text(errors="replace")
-            return html, dict(resp.headers), resp.status, resp.headers.getall("Set-Cookie", [])
+            return html, dict(resp.headers), resp.status, resp.headers.getall("Set-Cookie", []), str(resp.url)
     except Exception as e:
         logger.warning("Failed to fetch %s: %s", url, e)
-        return "", {}, 0, []
+        return "", {}, 0, [], url
 
 
 def extract_internal_links(html: str, base_url: str, max_links: int = 30) -> list[str]:
@@ -118,6 +151,7 @@ async def scrape_store(store_url: str, max_pages: int | None = None) -> dict:
             "pages_discovered": int,
             "blocked_reason": str | None,  # set when the homepage itself was blocked
             "blocked_pages": int,          # subpages dropped as error/challenge pages
+            "locale_redirect": str | None, # e.g. "/de → /nl": the store sent us to another language
         }
 
     Error and bot-challenge responses are dropped, not analysed: a 403 page has no
@@ -130,23 +164,29 @@ async def scrape_store(store_url: str, max_pages: int | None = None) -> dict:
 
     results: list[dict] = []
 
-    async with aiohttp.ClientSession(headers=HEADERS, connector=connector, timeout=timeout) as session:
+    async with aiohttp.ClientSession(headers=headers_for(store_url), connector=connector, timeout=timeout) as session:
         # Fetch homepage
         import time
 
         start = time.monotonic()
-        homepage_html, homepage_headers, homepage_status, homepage_cookies = await fetch_page(session, store_url)
+        homepage_html, homepage_headers, homepage_status, homepage_cookies, homepage_url = await fetch_page(session, store_url)
         elapsed_ms = int((time.monotonic() - start) * 1000)
 
         if not homepage_html:
-            return {"pages": [], "avg_load_time_ms": 0, "pages_discovered": 0, "blocked_reason": None, "blocked_pages": 0}
+            return {"pages": [], "avg_load_time_ms": 0, "pages_discovered": 0, "blocked_reason": None, "blocked_pages": 0, "locale_redirect": None}
         reason = block_reason(homepage_status, homepage_html)
         if reason:
             logger.warning("Homepage of %s blocked: %s", store_url, reason)
-            return {"pages": [], "avg_load_time_ms": 0, "pages_discovered": 0, "blocked_reason": reason, "blocked_pages": 0}
+            return {"pages": [], "avg_load_time_ms": 0, "pages_discovered": 0, "blocked_reason": reason, "blocked_pages": 0, "locale_redirect": None}
+
+        locale_redirect = None
+        requested_locale = url_locale(store_url)
+        if requested_locale and url_locale(homepage_url) != requested_locale:
+            locale_redirect = f"/{requested_locale} → {urlparse(homepage_url).path or '/'}"
+            logger.warning("%s redirected to another storefront language: %s", store_url, locale_redirect)
 
         results.append({
-            "url": store_url,
+            "url": homepage_url,
             "html": homepage_html,
             "headers": homepage_headers,
             "set_cookies": homepage_cookies,
@@ -155,7 +195,7 @@ async def scrape_store(store_url: str, max_pages: int | None = None) -> dict:
         })
 
         # Discover internal links
-        internal_links = extract_internal_links(homepage_html, store_url)
+        internal_links = extract_internal_links(homepage_html, homepage_url)
         max_additional = effective_max_pages - 1
 
         # Fetch additional pages concurrently (up to SCRAPER_CONCURRENCY at a time)
@@ -164,12 +204,12 @@ async def scrape_store(store_url: str, max_pages: int | None = None) -> dict:
         async def fetch_with_timing(url: str) -> dict | None:
             async with sem:
                 start = time.monotonic()
-                html, headers, status, cookies = await fetch_page(session, url)
+                html, headers, status, cookies, final_url = await fetch_page(session, url)
                 elapsed_ms = int((time.monotonic() - start) * 1000)
                 if not html:
                     return None
                 return {
-                    "url": url, "html": html, "headers": headers, "set_cookies": cookies,
+                    "url": final_url, "html": html, "headers": headers, "set_cookies": cookies,
                     "status": status, "load_time_ms": elapsed_ms,
                 }
 
@@ -194,4 +234,5 @@ async def scrape_store(store_url: str, max_pages: int | None = None) -> dict:
         "pages_discovered": len(results),
         "blocked_reason": None,
         "blocked_pages": blocked_pages,
+        "locale_redirect": locale_redirect,
     }

@@ -3,6 +3,8 @@ negatives that reached real reports."""
 
 import asyncio
 
+import pytest
+
 from app.full_audit.analyzers import dns_email
 from app.full_audit.analyzers.platform import detect_platform
 
@@ -177,3 +179,78 @@ def test_accelerated_checkout_container_counts_as_express_checkout():
 
     assert _detect_express_checkout('<div class="additional-checkout-buttons"><shopify-accelerated-checkout-cart>') != []
     assert _detect_express_checkout('<button>Afrekenen</button>') == []
+
+
+@pytest.mark.parametrize("html, platform", [
+    ('<div class="trustpilot-widget" data-template-id="x"></div>', "Trustpilot"),
+    ('<script src="https://widget.trustpilot.com/bootstrap/v5/tp.widget.bootstrap.min.js"></script>', "Trustpilot"),
+    ('<script src="https://integrations.etrusted.com/applications/widget.js/v2"></script>', "Trusted Shops"),
+    ('<span class="etrusted-review-badge__proof">Zufriedene Kundinnen</span>', "Trusted Shops"),
+    ('<etrusted-widget data-etrusted-widget-id="wdg-1"></etrusted-widget>', "Trusted Shops"),
+    ('<script src="//widgets.trustedshops.com/js/X1.js"></script>', "Trusted Shops"),
+    ('<iframe src="https://www.kiyoh.com/retrieve-widget.html?locationId=1"></iframe>', "Kiyoh"),
+    ('<link rel="stylesheet" href="https://www.feedbackcompany.com/widget.css">', "Feedback Company"),
+    ('<script>(function(){var s=document.createElement("script");s.src="https://dashboard.webwinkelkeur.nl/webshops/sidebar.js";})()</script>', "WebwinkelKeur"),
+    ('<div class="jdgm-widget jdgm-preview-badge" data-id="1"></div>', "Judge.me"),
+    ('<div class="klaviyo-star-rating-widget"></div>', "Klaviyo Reviews"),
+])
+def test_every_review_platform_counts_as_social_proof(html, platform):
+    from app.full_audit.analyzers.cro import _detect_social_proof
+
+    assert _detect_social_proof(html) == (True, f"{platform} widget gedetecteerd")
+
+
+def test_an_installed_review_app_that_renders_nothing_is_not_social_proof():
+    from app.full_audit.analyzers.cro import _detect_social_proof
+
+    # Plumelle /nl: the Trusted Shops app is installed, its sections render empty.
+    html = (
+        "<!-- BEGIN app block: shopify://apps/trusted-shops-reviews-and-more/blocks/trstd-login/1 -->"
+        '<section id="shopify-section-template--1__etrusted_review_badge" class="shopify-section"> </section>'
+        '<div class="footer__etrusted-badge"></div>'
+        '<script type="application/ld+json">{"@type": "Organization", "sameAs": ["https://www.trustpilot.com/review/x.nl"]}</script>'
+    )
+    assert _detect_social_proof(html) == (False, None)
+    assert _detect_social_proof("<p>Mooie producten</p>")[0] is False
+
+
+def test_german_rating_text_counts():
+    from app.full_audit.analyzers.cro import _detect_social_proof
+
+    assert _detect_social_proof("<p>4,8 Sterne aus 1.234 Bewertungen</p>")[0] is True
+
+
+# --- storefront locale ----------------------------------------------------------------
+
+def test_accept_language_follows_the_storefront_locale_in_the_url():
+    from app.analysis.scraper import accept_language_for, url_locale
+
+    assert accept_language_for("https://plumelle.com/de") == "de,en;q=0.8"
+    assert accept_language_for("https://shop.com/en-gb/products/x") == "en-GB,en;q=0.9"
+    assert accept_language_for("https://shop.com/nl-be/") == "nl-BE,nl;q=0.9,en;q=0.8"
+    assert accept_language_for("https://shop.nl/") == "nl-NL,nl;q=0.9,en;q=0.8"
+    assert url_locale("https://shop.nl/collections/x") is None
+    assert url_locale("https://shop.nl/p/123") is None
+
+
+def test_a_locale_redirect_is_recorded_and_pages_keep_their_final_url(monkeypatch):
+    from app.analysis import scraper
+
+    html = "<html>" + "x" * 60_000 + "</html>"
+
+    async def fake_fetch(session, url):
+        assert session.headers["Accept-Language"] == "de,en;q=0.8"
+        return html, {}, 200, [], "https://plumelle.com/nl"
+
+    monkeypatch.setattr(scraper, "fetch_page", fake_fetch)
+    result = asyncio.run(scraper.scrape_store("https://plumelle.com/de"))
+    assert result["locale_redirect"] == "/de → /nl"
+    assert result["pages"][0]["url"] == "https://plumelle.com/nl"
+
+
+def test_review_app_variable_names_in_theme_code_are_not_a_widget():
+    from app.full_audit.analyzers.cro import _detect_social_proof
+
+    # Shopify theme code on Plumelle /nl references apps that aren't installed.
+    html = "<script>var MetafieldYotpoRating = null; var okendoProduct = null;</script>"
+    assert _detect_social_proof(html) == (False, None)

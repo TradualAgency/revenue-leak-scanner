@@ -374,6 +374,12 @@ async def _run_full_audit(audit_id: uuid.UUID) -> None:
                 logger.warning("Full audit step %s failed for %s: %s", step, audit_id, exc)
                 pipeline_warnings.append(f"{step}: {type(exc).__name__}: {exc}"[:300])
 
+            if scrape_result.get("locale_redirect"):
+                pipeline_warnings.append(
+                    f"scrape: de winkel stuurde ons naar een andere taalversie ({scrape_result['locale_redirect']}); "
+                    "bevindingen gelden voor die versie."
+                )
+
             analyzer_names = [
                 "platform", "performance", "third_party", "tracking", "checkout", "owned_channels",
                 "seo", "security", "dns_email", "domain_health", "rich_results",
