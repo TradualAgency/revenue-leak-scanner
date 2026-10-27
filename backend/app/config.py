@@ -38,18 +38,24 @@ class Settings(BaseSettings):
     COMPETITOR_SNAPSHOT_NEGATIVE_TTL_DAYS: int = 2
 
     # Fix agents (operator-only): turn audit findings into implementation packages.
-    FIX_AGENT_MODEL: str = "claude-opus-5"
-    FIX_AGENT_MAX_TURNS: int = 15
+    # Cost knobs: model, effort ("low" | "medium" | "high") and turn budget per agent.
+    FIX_AGENT_MODEL: str = "claude-sonnet-5"
+    FIX_AGENT_EFFORT: str = "medium"
+    FIX_AGENT_MAX_TURNS: int = 10
     # Finding-verifier (app/agents/verifier): checks every priced finding on the live
-    # store before the euros are final. Model falls back to FIX_AGENT_MODEL.
-    VERIFIER_ENABLED: bool = True
-    VERIFIER_MODEL: str | None = None
-    VERIFIER_MAX_TURNS: int = 12
+    # store before the euros are final. Off in the audit pipeline by default (cost);
+    # the operator starts it per audit. Model falls back to FIX_AGENT_MODEL.
+    VERIFIER_ENABLED: bool = False
+    VERIFIER_MODEL: str | None = "claude-sonnet-5"
+    VERIFIER_EFFORT: str = "medium"
+    VERIFIER_MAX_TURNS: int = 8
     # Funnel agent (app/agents/funnel): walks home -> search -> PDP -> cart -> checkout in a
-    # mobile browser during every full audit. Needs Chromium (`playwright install chromium`).
-    FUNNEL_AGENT_ENABLED: bool = True
+    # mobile browser. Off in the audit pipeline by default (cost); the operator starts it
+    # per audit. Needs Chromium (`playwright install chromium`).
+    FUNNEL_AGENT_ENABLED: bool = False
     FUNNEL_AGENT_MODEL: str = "claude-sonnet-5"
-    FUNNEL_AGENT_MAX_TURNS: int = 40
+    FUNNEL_AGENT_EFFORT: str = "low"
+    FUNNEL_AGENT_MAX_TURNS: int = 20
     FUNNEL_AGENT_TIMEOUT_S: int = 300
     # Fernet key (`Fernet.generate_key()`) for the per-audit Shopify Admin token. Empty
     # means tokens can't be stored — the agents then work outside-only.

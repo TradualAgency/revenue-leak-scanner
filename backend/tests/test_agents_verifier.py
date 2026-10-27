@@ -90,7 +90,7 @@ async def test_run_verifier_retries_invalid_submission_and_never_sends_euros():
         _response(_tool_use("submit_verification", {"verdicts": [_verdict("perf.lcp_mobile", "refuted")]})),
     ]})
 
-    report = await run_verifier(data, client=client)
+    report = await run_verifier(data, client=client, force=True)
 
     assert report.verdict_map() == {"perf.lcp_mobile": "refuted"}
     assert report.errors == [] and (report.input_tokens, report.output_tokens) == (200, 100)
@@ -107,7 +107,7 @@ async def test_failed_group_gives_no_verdicts_and_other_groups_still_count():
         "checkout.no_guest": [_response(_tool_use("submit_verification", {"verdicts": [_verdict("checkout.no_guest", "unverifiable")]}))],
     })
 
-    report = await run_verifier(data, client=client)
+    report = await run_verifier(data, client=client, force=True)
 
     # The refused group's finding keeps its analyzer price: no verdict, just an error.
     assert report.verdict_map() == {"checkout.no_guest": "unverifiable"}

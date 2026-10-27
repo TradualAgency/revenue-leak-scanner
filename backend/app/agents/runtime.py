@@ -10,6 +10,7 @@ turns.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Generic, TypeVar
 
@@ -17,6 +18,8 @@ import anthropic
 from pydantic import BaseModel, ValidationError
 
 from app.agents.tools import execute_tool
+
+logger = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=BaseModel)
 
@@ -32,8 +35,12 @@ class AgentError(Exception):
 @dataclass
 class LoopResult(Generic[S]):
     submission: S
+    # input_tokens includes cache reads/writes; cache_read_tokens is the (much cheaper)
+    # cached part of it, kept apart so a run's cost can be worked out.
     input_tokens: int
     output_tokens: int
+    cache_read_tokens: int = 0
+    turns: int = 0
 
 
 def submit_definition(name: str, description: str, model: type[BaseModel]) -> dict:
@@ -51,12 +58,13 @@ async def run_tool_loop(
     first_message: str,
     ctx: Any,
     max_turns: int,
+    effort: str = "medium",
     executor: Executor = execute_tool,
 ) -> LoopResult[S]:
     submit_name = submit_tool["name"]
     tools = [*tools, submit_tool]
     messages: list[dict] = [{"role": "user", "content": first_message}]
-    input_tokens = output_tokens = 0
+    input_tokens = output_tokens = cache_read_tokens = 0
 
     for turn in range(max_turns):
         request = dict(
@@ -66,7 +74,7 @@ async def run_tool_loop(
             tools=tools,
             messages=messages,
             thinking={"type": "adaptive"},
-            output_config={"effort": "high"},
+            output_config={"effort": effort},
             # Auto-caches the growing prefix (tools, system, history) turn over turn.
             cache_control={"type": "ephemeral"},
         )
@@ -84,6 +92,7 @@ async def run_tool_loop(
         usage = response.usage
         input_tokens += (usage.input_tokens or 0) + (usage.cache_read_input_tokens or 0) + (usage.cache_creation_input_tokens or 0)
         output_tokens += usage.output_tokens or 0
+        cache_read_tokens += usage.cache_read_input_tokens or 0
 
         if response.stop_reason == "refusal":
             raise AgentError("Het model weigerde deze opdracht (stop_reason=refusal).")
@@ -113,7 +122,11 @@ async def run_tool_loop(
         handled = await asyncio.gather(*(handle(b) for b in tool_uses))
         submission = next((s for _, s in handled if s is not None), None)
         if submission is not None:
-            return LoopResult(submission, input_tokens, output_tokens)
+            logger.info(
+                "Agent %s done: model=%s effort=%s turns=%d input=%d (cache_read=%d) output=%d",
+                submit_name, model, effort, turn + 1, input_tokens, cache_read_tokens, output_tokens,
+            )
+            return LoopResult(submission, input_tokens, output_tokens, cache_read_tokens, turn + 1)
 
         content: list[dict] = [r for r, _ in handled]
         if turn == max_turns - 2:

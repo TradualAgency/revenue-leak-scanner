@@ -114,6 +114,7 @@ async def run_agent(
         first_message=await _initial_message(spec, ctx, owned),
         ctx=ctx,
         max_turns=settings.FIX_AGENT_MAX_TURNS,
+        effort=settings.FIX_AGENT_EFFORT,
     )
     submission = loop.submission
     package = FixPackage(

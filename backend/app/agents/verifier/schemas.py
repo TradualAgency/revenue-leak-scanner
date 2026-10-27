@@ -28,6 +28,7 @@ class VerificationReport(BaseModel):
     model: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
     used_admin_data: bool = False
     # Per verifier group that failed: "<group>: <error>". Its findings got no verdict
     # and stay priced as the analyzers had them.

@@ -140,6 +140,7 @@ async def run_verifier(
                 first_message=await _first_message(spec, ctx, findings),
                 ctx=ctx,
                 max_turns=settings.VERIFIER_MAX_TURNS,
+                effort=settings.VERIFIER_EFFORT,
             )
         except (AgentError, anthropic.APIError) as exc:
             error = f"{name}: {exc}"
@@ -147,17 +148,18 @@ async def run_verifier(
             logger.exception("Verifier group %s failed for %s", name, data.store_url)
             error = f"{name}: {type(exc).__name__}: {exc}"
         else:
-            return collect_verdicts(loop.submission, findings), loop.input_tokens, loop.output_tokens, ctx.used_admin, None
+            return collect_verdicts(loop.submission, findings), (loop.input_tokens, loop.output_tokens, loop.cache_read_tokens), ctx.used_admin, None
         # A failed run says nothing about the store: its findings stay as the analyzers
         # priced them, and the error is shown to the operator.
-        return [], 0, 0, False, error[:500]
+        return [], (0, 0, 0), False, error[:500]
 
     results = await asyncio.gather(*(one(n, fs) for n, fs in groups.items()))
     report = VerificationReport(model=model)
-    for verdicts, in_tok, out_tok, used_admin, error in results:
+    for verdicts, (in_tok, out_tok, cache_tok), used_admin, error in results:
         report.verdicts.extend(verdicts)
         report.input_tokens += in_tok
         report.output_tokens += out_tok
+        report.cache_read_tokens += cache_tok
         report.used_admin_data |= used_admin
         if error:
             report.errors.append(error)

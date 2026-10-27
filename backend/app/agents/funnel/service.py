@@ -134,6 +134,7 @@ async def walk_funnel(
                 first_message=_first_message(store_url, pages),
                 ctx=session,
                 max_turns=settings.FUNNEL_AGENT_MAX_TURNS,
+                effort=settings.FUNNEL_AGENT_EFFORT,
                 executor=execute_browser_tool,
             ),
             timeout=settings.FUNNEL_AGENT_TIMEOUT_S,
@@ -169,4 +170,5 @@ async def walk_funnel(
         model=model,
         input_tokens=loop.input_tokens,
         output_tokens=loop.output_tokens,
+        cache_read_tokens=loop.cache_read_tokens,
     )

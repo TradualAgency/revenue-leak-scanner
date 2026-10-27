@@ -15,7 +15,7 @@ from urllib.parse import urljoin
 
 from app.agents.funnel.browser import BrowserSession, Screenshot, _host, is_checkout_url
 
-MAX_SCREENSHOTS = 12
+MAX_SCREENSHOTS = 6
 SNAPSHOT_CHARS = 9_000
 CLICK_TIMEOUT_MS = 5_000
 SETTLE_MS = 1_500
