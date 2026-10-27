@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -17,7 +18,7 @@ from app.full_audit.schemas import (
     FullAuditResponse,
     FullAuditStatusResponse,
 )
-from app.full_audit.service import run_full_audit
+from app.full_audit.service import cancel_running_audit, run_full_audit
 
 router = APIRouter(prefix="/api/v1/full-audit", tags=["full-audit"])
 
@@ -71,6 +72,27 @@ async def get_full_audit_list(
     """Every stored audit, newest first. Operator-only — a list of every prospect we
     have ever scanned is not shareable data."""
     return await list_full_audits(db, limit=limit, offset=offset, q=q)
+
+
+@router.post(
+    "/{audit_id}/cancel", response_model=FullAuditStatusResponse,
+    dependencies=[Depends(require_operator_key)],
+)
+async def cancel_full_audit(audit_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> FullAuditStatusResponse:
+    """Stop a queued or running audit. Also clears audits stuck on 'processing' after a
+    server restart: the status change is what counts, the task cancel is a bonus."""
+    audit = await db.get(FullAudit, audit_id)
+    if audit is None:
+        raise HTTPException(status_code=404, detail="Audit not found")
+    if audit.status not in ("queued", "processing"):
+        raise HTTPException(status_code=409, detail=f"Audit loopt niet (status: {audit.status})")
+    audit.status = "cancelled"
+    audit.error_message = "Gestopt door operator."
+    audit.completed_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(audit)
+    cancel_running_audit(audit_id)
+    return FullAuditStatusResponse.model_validate(audit, from_attributes=True)
 
 
 @router.get("/{audit_id}/status", response_model=FullAuditStatusResponse)

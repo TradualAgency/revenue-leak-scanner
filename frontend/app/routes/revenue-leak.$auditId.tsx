@@ -407,8 +407,8 @@ export default function RevenueLeakAuditPage() {
           setReport(report);
           setCompanyName(report.company_name ?? s.store_url);
           setLoading(false);
-        } else if (s.status === "failed") {
-          setError("De audit is mislukt. Probeer het opnieuw.");
+        } else if (s.status === "failed" || s.status === "cancelled") {
+          setError(s.status === "failed" ? "De audit is mislukt. Probeer het opnieuw." : "Deze audit is gestopt; er is geen rapport.");
           setLoading(false);
         } else {
           setTimeout(poll, POLL_INTERVAL);

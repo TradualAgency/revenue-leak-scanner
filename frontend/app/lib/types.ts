@@ -55,7 +55,7 @@ export interface DetectedPlugin {
 }
 
 export type ScanLevel = "outside-only" | "semi" | "full-access";
-export type AuditStatus = "queued" | "processing" | "ready_for_review" | "failed";
+export type AuditStatus = "queued" | "processing" | "ready_for_review" | "failed" | "cancelled";
 
 export interface FullAuditRequest {
   store_url: string;

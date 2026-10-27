@@ -6,6 +6,7 @@ import {
   getCompetitorCandidates,
   getFullAudit,
   getFullAuditSanityExport,
+  cancelFullAudit,
   getFullAuditStatus,
   listCompetitorBenchmarkRuns,
   updateCompetitorSet,
@@ -2089,7 +2090,21 @@ function FullAuditResults() {
 
   const isReady = statusData?.status === "ready_for_review";
   const isFailed = statusData?.status === "failed";
-  const isPending = !isReady && !isFailed;
+  const isCancelled = statusData?.status === "cancelled";
+  const isPending = !isReady && !isFailed && !isCancelled;
+  const [stopping, setStopping] = useState(false);
+
+  async function handleStop() {
+    if (!auditId || !window.confirm("Deze audit stoppen? Wat tot nu toe gedaan is, wordt weggegooid.")) return;
+    setStopping(true);
+    try {
+      setStatusData(await cancelFullAudit(auditId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Stoppen mislukt");
+    } finally {
+      setStopping(false);
+    }
+  }
 
   useEffect(() => {
     if (!isPending) return;
@@ -2110,7 +2125,7 @@ function FullAuditResults() {
           const full = await getFullAudit(auditId!);
           setAuditData(full.data);
           getFullAuditSanityExport(auditId!).then(setSanityExport);
-        } else if (s.status === "failed") {
+        } else if (s.status === "failed" || s.status === "cancelled") {
           if (intervalRef.current) clearInterval(intervalRef.current);
         }
       } catch (err) {
@@ -2156,6 +2171,7 @@ function FullAuditResults() {
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                   isReady ? "bg-emerald-50 text-emerald-700" :
                   isFailed ? "bg-red-50 text-red-700" :
+                  isCancelled ? "bg-gray-100 text-gray-600" :
                   "bg-yellow-50 text-yellow-700"
                 }`}>
                   {statusData.status.replace("_", " ")}
@@ -2180,6 +2196,27 @@ function FullAuditResults() {
                   {statusMessages[msgIndex]}
                 </p>
               </div>
+              {operatorKey && (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  disabled={stopping}
+                  className="text-xs font-medium text-red-600 border border-red-200 px-4 py-2 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {stopping ? "Stoppen…" : "Audit stoppen"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Cancelled */}
+          {isCancelled && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
+              <h2 className="text-lg font-semibold text-gray-700 mb-2">Audit gestopt</h2>
+              <p className="text-sm text-gray-500">Deze audit is handmatig gestopt; er is geen rapport gemaakt.</p>
+              <Link to="/full-audit" className="mt-4 inline-block bg-tradual-accent text-tradual-primary px-8 py-3 text-sm font-medium hover:opacity-90 transition-opacity">
+                Nieuwe audit
+              </Link>
             </div>
           )}
 

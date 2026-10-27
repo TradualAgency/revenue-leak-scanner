@@ -280,13 +280,50 @@ def _synthesize(
     }
 
 
+# Audits run as in-process background tasks (one uvicorn worker). Kept here so an
+# operator can stop one: `cancel_running_audit` cancels the task, which also tears down
+# whatever it was awaiting (HTTP calls, PageSpeed, the funnel agent's browser).
+_RUNNING: dict[uuid.UUID, asyncio.Task] = {}
+_CANCEL_REQUESTED: set[uuid.UUID] = set()
+
+
+def cancel_running_audit(audit_id: uuid.UUID) -> bool:
+    """Cancel the audit's task if this process is running it. False when it isn't —
+    e.g. it never started, or it was orphaned by a restart; the status change the
+    caller makes is then all that's needed (and the pipeline's own check before
+    persisting covers any other process)."""
+    task = _RUNNING.get(audit_id)
+    if task is None or task.done():
+        return False
+    _CANCEL_REQUESTED.add(audit_id)
+    task.cancel()
+    return True
+
+
 async def run_full_audit(audit_id: uuid.UUID) -> None:
+    task = asyncio.current_task()
+    if task is not None:
+        _RUNNING[audit_id] = task
+    try:
+        await _run_full_audit(audit_id)
+    except asyncio.CancelledError:
+        if audit_id not in _CANCEL_REQUESTED:
+            raise  # server shutdown etc. — not ours to swallow
+        logger.info("Full audit %s stopped by operator", audit_id)
+    finally:
+        _RUNNING.pop(audit_id, None)
+        _CANCEL_REQUESTED.discard(audit_id)
+
+
+async def _run_full_audit(audit_id: uuid.UUID) -> None:
     async with AsyncSessionLocal() as db:
         try:
-            await _set_status(db, audit_id, "processing")
-
             result = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))
             audit = result.scalar_one()
+            if audit.status == "cancelled":  # stopped while still queued
+                return
+            audit.status = "processing"
+            await db.commit()
             store_url = audit.store_url
 
             # 1. Scrape
@@ -605,9 +642,14 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
             # Pydantic copied the list at construction; pick up the AI/Sanity steps too.
             audit_data.pipeline_warnings = list(pipeline_warnings)
 
-            # 9. Persist
+            # 9. Persist — unless an operator stopped the audit meanwhile (the cancel
+            # endpoint writes the status from another session, so re-read it).
             result2 = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))
             row = result2.scalar_one()
+            await db.refresh(row)
+            if row.status == "cancelled":
+                logger.info("Full audit %s was stopped; discarding its result", audit_id)
+                return
             row.status = "ready_for_review"
             row.audit_data = audit_data.model_dump(mode="json")
             row.completed_at = datetime.now(UTC)
@@ -624,17 +666,9 @@ async def run_full_audit(audit_id: uuid.UUID) -> None:
                 async with AsyncSessionLocal() as db2:
                     r = await db2.execute(select(FullAudit).where(FullAudit.id == audit_id))
                     row = r.scalar_one_or_none()
-                    if row:
+                    if row and row.status != "cancelled":
                         row.status = "failed"
                         row.error_message = str(exc)[:2000]
                         await db2.commit()
             except Exception:
                 pass
-
-
-async def _set_status(db: AsyncSession, audit_id: uuid.UUID, status: str) -> None:
-    result = await db.execute(select(FullAudit).where(FullAudit.id == audit_id))
-    row = result.scalar_one_or_none()
-    if row:
-        row.status = status
-        await db.commit()

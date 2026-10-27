@@ -8,7 +8,7 @@ import ReportCard from "~/components/report/ReportCard";
 import SectionLabel from "~/components/report/SectionLabel";
 import StatusPill from "~/components/report/StatusPill";
 import type { PillTone } from "~/components/report/tone";
-import { listFullAudits } from "~/lib/api";
+import { cancelFullAudit, listFullAudits } from "~/lib/api";
 import type { BenchmarkRunSummary, FullAuditListItem } from "~/lib/types";
 
 export function meta() {
@@ -23,6 +23,7 @@ const PAGE_SIZE = 50;
 // Statuses a run can still move out of. While any row sits in one of these the list
 // refetches, so a benchmark started elsewhere shows up without a manual reload.
 const NON_TERMINAL = new Set(["queued", "discovering", "measuring", "scoring"]);
+const AUDIT_RUNNING = new Set(["queued", "processing"]);
 
 function auditTone(status: string): PillTone {
   if (status === "ready_for_review") return "ok";
@@ -99,7 +100,23 @@ function ScansTable() {
 
   // Refetching the whole list beats polling per row: at this size one request is
   // cheaper than N, and the rows can't drift out of sync with each other.
-  const hasRunning = items.some((a) => a.latest_benchmark && NON_TERMINAL.has(a.latest_benchmark.status));
+  const hasRunning = items.some(
+    (a) => AUDIT_RUNNING.has(a.status) || (a.latest_benchmark && NON_TERMINAL.has(a.latest_benchmark.status)),
+  );
+
+  const [stopping, setStopping] = useState<string | null>(null);
+  async function stopAudit(id: string, store: string) {
+    if (!window.confirm(`De audit van ${store} stoppen? Wat tot nu toe gedaan is, wordt weggegooid.`)) return;
+    setStopping(id);
+    try {
+      await cancelFullAudit(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Stoppen mislukt");
+    } finally {
+      setStopping(null);
+    }
+  }
   const loadRef = useRef(load);
   loadRef.current = load;
   useEffect(() => {
@@ -169,6 +186,16 @@ function ScansTable() {
                     </td>
                     <td className="py-2.5 px-3">
                       <StatusPill tone={auditTone(audit.status)}>{audit.status}</StatusPill>
+                      {AUDIT_RUNNING.has(audit.status) && (
+                        <button
+                          type="button"
+                          onClick={() => stopAudit(audit.id, audit.store_url.replace(/^https?:\/\//, ""))}
+                          disabled={stopping === audit.id}
+                          className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-red-600 hover:underline disabled:opacity-50"
+                        >
+                          {stopping === audit.id ? "Stoppen…" : "Stop"}
+                        </button>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 whitespace-nowrap">
                       {audit.latest_benchmark ? (

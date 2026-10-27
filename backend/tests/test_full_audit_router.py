@@ -318,3 +318,60 @@ async def test_the_client_report_of_an_unfinished_audit_has_no_data(client, db_s
 
 async def test_the_client_report_of_an_unknown_audit_is_404(client):
     assert (await client.get(f"/api/v1/full-audit/{uuid.uuid4()}/report")).status_code == 404
+
+
+# --- stopping an audit ----------------------------------------------------------------
+
+async def test_cancel_needs_the_operator_key(client, db_session):
+    audit = await _add_audit(db_session, status="processing")
+    resp = await client.post(f"/api/v1/full-audit/{audit.id}/cancel")
+    assert resp.status_code == 403
+
+
+async def test_cancel_stops_a_running_or_stuck_audit(client, db_session):
+    # No task in this process: a row stuck on 'processing' after a restart. The status
+    # change alone must be enough to clear it.
+    audit = await _add_audit(db_session, status="processing")
+
+    resp = await client.post(f"/api/v1/full-audit/{audit.id}/cancel", headers=OPERATOR)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "cancelled" and resp.json()["completed_at"]
+    await db_session.refresh(audit)
+    assert audit.status == "cancelled" and audit.error_message
+
+
+async def test_cancel_refuses_a_finished_or_already_stopped_audit(client, db_session):
+    done = await _add_audit(db_session, status="ready_for_review")
+    assert (await client.post(f"/api/v1/full-audit/{done.id}/cancel", headers=OPERATOR)).status_code == 409
+
+    queued = await _add_audit(db_session, status="queued")
+    assert (await client.post(f"/api/v1/full-audit/{queued.id}/cancel", headers=OPERATOR)).status_code == 200
+    assert (await client.post(f"/api/v1/full-audit/{queued.id}/cancel", headers=OPERATOR)).status_code == 409
+
+
+async def test_cancel_of_an_unknown_audit_is_404(client):
+    resp = await client.post(f"/api/v1/full-audit/{uuid.uuid4()}/cancel", headers=OPERATOR)
+    assert resp.status_code == 404
+
+
+async def test_cancelling_the_task_ends_it_quietly_and_clears_the_registry(monkeypatch):
+    import asyncio
+
+    from app.full_audit import service
+
+    started = asyncio.Event()
+
+    async def forever(audit_id):
+        started.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(service, "_run_full_audit", forever)
+    audit_id = uuid.uuid4()
+    task = asyncio.create_task(service.run_full_audit(audit_id))
+    await started.wait()
+
+    assert service.cancel_running_audit(audit_id) is True
+    await task  # an operator stop is not an error: no CancelledError escapes
+    assert audit_id not in service._RUNNING
+    assert service.cancel_running_audit(audit_id) is False

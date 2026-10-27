@@ -111,6 +111,11 @@ export function getFullAuditStatus(auditId: string): Promise<FullAuditStatusResp
   return request<FullAuditStatusResponse>(`/full-audit/${auditId}/status`);
 }
 
+// Operator-only: stop a queued or running audit (also clears one stuck after a restart).
+export function cancelFullAudit(auditId: string): Promise<FullAuditStatusResponse> {
+  return operatorRequest<FullAuditStatusResponse>(`/full-audit/${auditId}/cancel`, { method: "POST" });
+}
+
 // Operator-only: the full working file (sales copy, ROI, contact details).
 export function getFullAudit(auditId: string): Promise<FullAuditResponse> {
   return operatorRequest<FullAuditResponse>(`/full-audit/${auditId}`);

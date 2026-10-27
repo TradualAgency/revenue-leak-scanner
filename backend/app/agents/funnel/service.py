@@ -120,6 +120,8 @@ async def walk_funnel(
         logger.warning("Funnel agent could not start a browser: %s", exc)
         return FunnelWalk(status="failed", warnings=[f"Browser kon niet starten: {type(exc).__name__}: {str(exc)[:300]}"], model=model)
 
+    # finally: the browser closes on every exit — including a cancel when an operator
+    # stops the audit, which no `except Exception` would see.
     try:
         loop = await asyncio.wait_for(
             run_tool_loop(
@@ -137,17 +139,15 @@ async def walk_funnel(
             timeout=settings.FUNNEL_AGENT_TIMEOUT_S,
         )
     except (AgentError, anthropic.APIError, TimeoutError) as exc:
-        await close_session(session)
         reason = "Tijdslimiet bereikt" if isinstance(exc, TimeoutError) else str(exc)
         return FunnelWalk(status="failed", warnings=[f"Walk mislukt: {reason}"[:500]], model=model)
     except Exception as exc:
         logger.exception("Funnel agent crashed for %s", store_url)
-        await close_session(session)
         return FunnelWalk(status="failed", warnings=[f"Walk mislukt: {type(exc).__name__}"], model=model)
+    finally:
+        await close_session(session)
 
     blocked_requests = len(session.blocked)
-    await close_session(session)
-
     status, issues, warnings = build_walk(loop.submission, set(session.screenshots), session.evidence)
     used = {i.screenshot_id for i in issues if i.screenshot_id}
     try:

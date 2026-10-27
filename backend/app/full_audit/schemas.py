@@ -8,7 +8,7 @@ from app.agents.funnel.schemas import FunnelStep, FunnelWalk
 from app.agents.verifier.schemas import VerificationReport
 
 ScanLevel = Literal["outside-only", "semi", "full-access"]
-AuditStatus = Literal["queued", "processing", "ready_for_review", "failed"]
+AuditStatus = Literal["queued", "processing", "ready_for_review", "failed", "cancelled"]
 Rating = Literal["good", "needs-improvement", "poor"]
 DetectionConfidence = Literal["confirmed", "probable", "unknown"]
 ArchitectureType = Literal["monolith", "headless", "hybrid", "unknown"]
